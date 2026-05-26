@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+credentials/
 
 # Node
 node_modules/
@@ -37,3 +38,8 @@ output/
 data/raw/
 data/cache/
 *.tmp
+
+.claude
+skills-lock.json
+
+docs/
