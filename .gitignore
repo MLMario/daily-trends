@@ -39,6 +39,9 @@ data/raw/
 data/cache/
 *.tmp
 
+# Pipeline run artifacts (per-run output trees)
+runs/
+
 .claude
 skills-lock.json
 

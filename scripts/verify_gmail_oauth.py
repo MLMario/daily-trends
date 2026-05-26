@@ -7,6 +7,8 @@ If the second run triggers a browser, the refresh path is broken.
 
 from __future__ import annotations
 
+import base64
+from email.message import EmailMessage
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -14,7 +16,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 ROOT = Path(__file__).resolve().parent.parent
 CLIENT_FILE = ROOT / "credentials" / "oauth_client.json"
 TOKEN_FILE = ROOT / "credentials" / "token.json"
@@ -53,10 +55,18 @@ def load_or_create_credentials() -> Credentials:
 def main() -> None:
     creds = load_or_create_credentials()
     service = build("gmail", "v1", credentials=creds)
-    profile = service.users().getProfile(userId="me").execute()
-    print(f"[ok] authenticated as {profile['emailAddress']}")
-    print(f"     messagesTotal={profile.get('messagesTotal')} "
-          f"threadsTotal={profile.get('threadsTotal')}")
+
+    msg = EmailMessage()
+    msg["To"] = "mariogj1987@gmail.com"
+    msg["Subject"] = "[daily-trends] oauth verification"
+    msg.set_content("oauth verification test message — safe to ignore")
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+
+    sent = service.users().messages().send(
+        userId="me", body={"raw": raw}
+    ).execute()
+    print(f"[ok] sent verification email id={sent['id']} — gmail.send scope works end-to-end")
+    print("     check your inbox for subject: [daily-trends] oauth verification")
 
 
 if __name__ == "__main__":

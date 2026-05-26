@@ -1,0 +1,62 @@
+"""Per-run output directory with typed paths for every pipeline artifact.
+
+Slice 2 paths (news-only walking skeleton):
+  - news/articles.json       (news subagent output)
+  - corpus.json              (normalized union of sources)
+  - email_sent.html          (archived rendered HTML)
+  - errors.log               (JSON-lines event log)
+
+Later slices add fields here (e.g. vendor_blogs/posts.json, trending_topics.json),
+not new call sites.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def _utc_minute_run_id(now: datetime | None = None) -> str:
+    when = now or datetime.now(timezone.utc)
+    return when.strftime("%Y-%m-%dT%H-%MZ")
+
+
+@dataclass(frozen=True)
+class RunWorkspace:
+    run_id: str
+    path: Path
+
+    @classmethod
+    def new_run(cls, runs_root: Path, *, now: datetime | None = None) -> "RunWorkspace":
+        run_id = _utc_minute_run_id(now)
+        path = Path(runs_root) / run_id
+        if path.exists():
+            raise FileExistsError(
+                f"run {run_id} already exists at {path} — wait until the next UTC minute"
+            )
+        (path / "news").mkdir(parents=True, exist_ok=False)
+        return cls(run_id=run_id, path=path)
+
+    @classmethod
+    def existing_run(cls, runs_root: Path, run_id: str) -> "RunWorkspace":
+        path = Path(runs_root) / run_id
+        if not path.is_dir():
+            raise FileNotFoundError(f"run directory not found: {path}")
+        return cls(run_id=run_id, path=path)
+
+    @property
+    def news_articles(self) -> Path:
+        return self.path / "news" / "articles.json"
+
+    @property
+    def corpus(self) -> Path:
+        return self.path / "corpus.json"
+
+    @property
+    def email_sent(self) -> Path:
+        return self.path / "email_sent.html"
+
+    @property
+    def errors(self) -> Path:
+        return self.path / "errors.log"
