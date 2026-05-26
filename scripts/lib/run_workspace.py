@@ -1,13 +1,13 @@
 """Per-run output directory with typed paths for every pipeline artifact.
 
-Slice 2 paths (news-only walking skeleton):
-  - news/articles.json       (news subagent output)
-  - corpus.json              (normalized union of sources)
-  - email_sent.html          (archived rendered HTML)
-  - errors.log               (JSON-lines event log)
+Paths:
+  - news/articles.json         (news subagent output)
+  - vendor_blogs/posts.json    (vendor-blogs subagent output)
+  - corpus.json                (normalized union of sources)
+  - email_sent.html            (archived rendered HTML)
+  - errors.log                 (JSON-lines event log)
 
-Later slices add fields here (e.g. vendor_blogs/posts.json, trending_topics.json),
-not new call sites.
+Later slices add fields here (e.g. trending_topics.json), not new call sites.
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ class RunWorkspace:
                 f"run {run_id} already exists at {path} — wait until the next UTC minute"
             )
         (path / "news").mkdir(parents=True, exist_ok=False)
+        (path / "vendor_blogs").mkdir(exist_ok=False)
         return cls(run_id=run_id, path=path)
 
     @classmethod
@@ -48,6 +49,10 @@ class RunWorkspace:
     @property
     def news_articles(self) -> Path:
         return self.path / "news" / "articles.json"
+
+    @property
+    def vendor_blogs_posts(self) -> Path:
+        return self.path / "vendor_blogs" / "posts.json"
 
     @property
     def corpus(self) -> Path:

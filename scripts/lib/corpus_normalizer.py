@@ -1,7 +1,8 @@
 """Union per-source raw fetches into a normalized corpus.json.
 
-Slice 2 reads only runs/<id>/news/articles.json. Adding IG/X/vendor blogs later
-is "another reader inside this module" — call sites do not change.
+Every source is read by the same per-source reader: a (path, source-tag) pair
+fed through one normalization routine. Adding IG/X/etc. later is one more entry
+in `_sources()` — no source-specific branching, no call-site changes.
 """
 
 from __future__ import annotations
@@ -24,10 +25,21 @@ def _stable_id(url: str) -> str:
     return hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
 
 
-def _read_news(path: Path) -> list[dict]:
+def _read_records(path: Path) -> list[dict]:
     if not path.exists():
         return []
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _to_corpus_item(record: dict, source: str) -> dict:
+    return {
+        "id": _stable_id(record["url"]),
+        "source": source,
+        "account_or_outlet": record.get("source", ""),
+        "posted_at": record.get("published_at", ""),
+        "text": record.get("summary", "") or "",
+        "url": record["url"],
+    }
 
 
 class CorpusNormalizer:
@@ -35,25 +47,23 @@ class CorpusNormalizer:
         self._ws = workspace
         self._log = error_log
 
+    def _sources(self) -> list[tuple[Path, str]]:
+        return [
+            (self._ws.news_articles, "news"),
+            (self._ws.vendor_blogs_posts, "vendor_blogs"),
+        ]
+
     def run(self) -> list[dict]:
         items: list[dict] = []
         dropped = 0
 
-        for article in _read_news(self._ws.news_articles):
-            text = article.get("summary", "") or ""
-            if _word_count(text) < MIN_WORDS:
-                dropped += 1
-                continue
-            items.append(
-                {
-                    "id": _stable_id(article["url"]),
-                    "source": "news",
-                    "account_or_outlet": article.get("source", ""),
-                    "posted_at": article.get("published_at", ""),
-                    "text": text,
-                    "url": article["url"],
-                }
-            )
+        for path, source in self._sources():
+            for record in _read_records(path):
+                item = _to_corpus_item(record, source)
+                if _word_count(item["text"]) < MIN_WORDS:
+                    dropped += 1
+                    continue
+                items.append(item)
 
         self._ws.corpus.write_text(json.dumps(items, indent=2), encoding="utf-8")
         self._log.log(
