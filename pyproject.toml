@@ -7,3 +7,12 @@ dependencies = [
     "google-api-python-client>=2.196.0",
     "google-auth-oauthlib>=1.4.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
