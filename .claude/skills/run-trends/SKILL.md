@@ -5,7 +5,7 @@ description: Run the daily-trends pipeline end-to-end against today's news and d
 
 # run-trends
 
-Orchestrate the pipeline: pre-flight → news + vendor-blogs subagents (parallel) → normalize → cluster → recommend → render + dispatch the topic-card email.
+Orchestrate the pipeline: pre-flight → news + vendor-blogs subagents (parallel) → normalize → slow-day gate → cluster → recommend → render + dispatch the email. On a slow day (corpus below threshold), the gate skips clustering + recommendations and the email renders an alternate light-signal layout.
 
 ## Steps
 
@@ -50,7 +50,17 @@ Orchestrate the pipeline: pre-flight → news + vendor-blogs subagents (parallel
    uv run python -m scripts.normalize_corpus <run_id>
    ```
 
-5. **Cluster.** Read `prompts/clustering_prompt.md` and the full contents of `runs/<run_id>/corpus.json`. Spawn **one** subagent (`subagent_type=general-purpose`, `model=sonnet`, fresh context). Its prompt is the clustering prompt, then the corpus JSON inlined verbatim, then two lines:
+5. **Slow-day gate.** Read `runs/<run_id>/corpus.json` and `min_corpus_for_clustering` from `config.json`. Compare the corpus length to the threshold:
+
+   - **If `len(corpus) < min_corpus_for_clustering`:** the day is too quiet to manufacture topics. Write `runs/<run_id>/skipped_clustering.json` and **skip steps 6 and 7** — jump straight to step 8 (render + dispatch), which will take the light-signal path. Do **not** write `trending_topics.json` or `content_recommendations.json`.
+
+     ```
+     uv run python -c "import json; from pathlib import Path; corpus=json.loads(Path('runs/<run_id>/corpus.json').read_text(encoding='utf-8')); Path('runs/<run_id>/skipped_clustering.json').write_text(json.dumps({'reason': 'corpus below clustering threshold', 'corpus_size': len(corpus)}), encoding='utf-8')"
+     ```
+
+   - **Otherwise:** continue to step 6 as normal.
+
+6. **Cluster.** Read `prompts/clustering_prompt.md` and the full contents of `runs/<run_id>/corpus.json`. Spawn **one** subagent (`subagent_type=general-purpose`, `model=sonnet`, fresh context). Its prompt is the clustering prompt, then the corpus JSON inlined verbatim, then two lines:
 
    ```
    Run ID: <run_id>
@@ -63,7 +73,7 @@ Orchestrate the pipeline: pre-flight → news + vendor-blogs subagents (parallel
    uv run python -c "from pathlib import Path; Path('runs/<run_id>/trending_topics.json').write_text('{\"topics\": [], \"other_notable\": []}', encoding='utf-8')"
    ```
 
-6. **Recommend.** Read `prompts/recommendations_prompt.md`, the full contents of `runs/<run_id>/trending_topics.json`, and `content_channels` from `config.json`. Spawn **one** subagent (same harness, fresh context). Its prompt is the recommendations prompt, then the trending-topics JSON inlined verbatim, then the channel list as plain prose and the run lines. For example:
+7. **Recommend.** Read `prompts/recommendations_prompt.md`, the full contents of `runs/<run_id>/trending_topics.json`, and `content_channels` from `config.json`. Spawn **one** subagent (same harness, fresh context). Its prompt is the recommendations prompt, then the trending-topics JSON inlined verbatim, then the channel list as plain prose and the run lines. For example:
 
    ```
    Channels to write for: substack, linkedin, instagram
@@ -79,19 +89,19 @@ Orchestrate the pipeline: pre-flight → news + vendor-blogs subagents (parallel
 
    Clustering and recommendations are a strict dependency chain — run them sequentially, not in a single tool block.
 
-7. **Render + dispatch.** Bash:
+8. **Render + dispatch.** Bash:
 
    ```
    uv run python -m scripts.send_email <run_id>
    ```
 
-8. **Final console line.** Read `runs/<run_id>/corpus.json`, `runs/<run_id>/trending_topics.json`, `runs/<run_id>/content_recommendations.json`, and `runs/<run_id>/errors.log`. Print one line:
+9. **Final console line.** Read `runs/<run_id>/corpus.json`, `runs/<run_id>/trending_topics.json`, `runs/<run_id>/content_recommendations.json`, and `runs/<run_id>/errors.log`. Print one line:
 
    ```
    run_id=<run_id> items=<n> topics=<t> ideas=<i> errors=<m> email=<mode>:<id>
    ```
 
-   `topics` is the number of entries in `trending_topics.json` `topics[]`. `ideas` is the total number of idea entries across all recommendations (sum of each recommendation's `ideas` map size). `errors` counts `errors.log` entries with `severity == "error"`. `email` is parsed from the dispatch step output.
+   `topics` is the number of entries in `trending_topics.json` `topics[]`. `ideas` is the total number of idea entries across all recommendations (sum of each recommendation's `ideas` map size). `errors` counts `errors.log` entries with `severity == "error"`. `email` is parsed from the dispatch step output. On a slow-day run the gate skipped synthesis, so `trending_topics.json` and `content_recommendations.json` are absent — report `topics=0 ideas=0`.
 
 ## Non-fatal handling
 

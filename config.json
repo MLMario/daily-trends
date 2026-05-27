@@ -2,6 +2,7 @@
   "email_to": "mariogj1987@gmail.com",
   "email_mode": "draft",
   "content_channels": ["substack", "linkedin", "instagram"],
+  "min_corpus_for_clustering": 4,
   "vendor_blogs_lookback_days": 7,
   "vendor_blogs": [
     { "name": "Anthropic", "url": "https://claude.com/blog" },
