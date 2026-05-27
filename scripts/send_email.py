@@ -13,7 +13,7 @@ from pathlib import Path
 
 from scripts.lib.email_renderer import EmailRenderer
 from scripts.lib.error_log import ErrorLog
-from scripts.lib.gmail_sender import GmailSender
+from scripts.lib.gmail_sender import Attachment, GmailSender
 from scripts.lib.run_workspace import RunWorkspace
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +34,12 @@ def main(argv: list[str]) -> int:
     renderer = EmailRenderer(workspace)
     html_body = renderer.render(run_id=workspace.run_id)
 
+    attachments = [
+        Attachment(filename=path.name, content=path.read_bytes())
+        for path in (workspace.trending_topics, workspace.content_recommendations)
+        if path.exists()
+    ]
+
     sender = GmailSender(
         client_file=CREDS / "oauth_client.json",
         token_file=CREDS / "token.json",
@@ -44,7 +50,7 @@ def main(argv: list[str]) -> int:
             to=config["email_to"],
             subject=f"[daily-trends] Run {workspace.run_id}",
             html_body=html_body,
-            attachments=[],
+            attachments=attachments,
         )
     except Exception as exc:
         log.log(step="dispatch", severity="error", message=str(exc))
