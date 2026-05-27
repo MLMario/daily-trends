@@ -4,6 +4,7 @@
   "content_channels": ["substack", "linkedin", "instagram"],
   "min_corpus_for_clustering": 4,
   "vendor_blogs_lookback_days": 7,
+  "x_lookback_days": 1,
   "vendor_blogs": [
     { "name": "Anthropic", "url": "https://claude.com/blog" },
     { "name": "OpenAI Developers", "url": "https://developers.openai.com/blog" }
