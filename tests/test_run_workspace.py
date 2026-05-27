@@ -27,3 +27,19 @@ def test_lineage_path_sits_at_run_root(tmp_run_dir: Path) -> None:
     workspace = RunWorkspace.new_run(tmp_run_dir)
 
     assert workspace.lineage == workspace.path / "lineage.json"
+
+
+def test_new_run_creates_x_directory(tmp_run_dir: Path) -> None:
+    # A run always has somewhere for the X scraper to write, even with no
+    # X accounts configured — the x/ directory exists from initialization.
+    workspace = RunWorkspace.new_run(tmp_run_dir)
+
+    assert (workspace.path / "x").is_dir()
+
+
+def test_x_posts_path_sits_under_x_dir(tmp_run_dir: Path) -> None:
+    # The X scraper's raw output follows the same per-source convention as
+    # news/articles.json and vendor_blogs/posts.json.
+    workspace = RunWorkspace.new_run(tmp_run_dir)
+
+    assert workspace.x_posts == workspace.path / "x" / "posts.json"
