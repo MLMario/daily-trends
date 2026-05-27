@@ -41,3 +41,11 @@ Write a single JSON file to the path passed in your inputs (typically `runs/<run
 ```
 
 If you cannot fetch a source, write an empty array rather than failing. Return only the absolute path to the file you wrote.
+
+## Reporting fetch failures
+
+If a source cannot be fetched (HTTP error, timeout, unreachable), **do not fail the run** — skip it, keep going with the other source, and record the failure so it surfaces in the digest's Errors & Skips section under the `news` step. Append one `warning` line to `runs/<run_id>/errors.log` for each source you could not reach, naming it and what happened, using the `ErrorLog` helper (the run ID is in your inputs):
+
+```
+uv run python -c "from pathlib import Path; from scripts.lib.error_log import ErrorLog; ErrorLog(Path('runs/<run_id>/errors.log')).log(step='news', severity='warning', message='Hacker News unreachable: HTTP 503 at https://news.ycombinator.com/')"
+```
