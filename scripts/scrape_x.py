@@ -2,25 +2,42 @@
 
 Usage: python -m scripts.scrape_x <run_id>
 
-Slice B.2 — opt-in control plane only, no fetch. Reads `creators/accounts.json[x]`
-and writes the uniform raw schema to runs/<run_id>/x/posts.json. When no X
-accounts are configured it short-circuits to an empty list and makes no Bright
-Data call. The actual fetch (BrightDataClient + XScraper) lands in Slice B.3,
-filling the non-empty branch below.
+Thin Bash-callable shell around BrightDataClient + XScraper. Reads
+`creators/accounts.json[x]` and `config.json[x_lookback_days]`, computes the
+MM-DD-YYYY lookback window (end = today UTC, start = today − lookback), fetches
+one snapshot per account, and writes the uniform raw schema to
+runs/<run_id>/x/posts.json. When no X accounts are configured it short-circuits
+to an empty list and makes no Bright Data call (so BRIGHT_DATA_KEY isn't needed).
+All the logic worth testing lives in XScraper; this entry is exercised by the
+dry-run / live smoke per the PRD.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from scripts.lib.bright_data_client import BrightDataClient
+from scripts.lib.error_log import ErrorLog
 from scripts.lib.preflight import x_handles
 from scripts.lib.run_workspace import RunWorkspace
+from scripts.lib.x_scraper import XScraper
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RUNS_ROOT = REPO_ROOT / "runs"
 ACCOUNTS = REPO_ROOT / "creators" / "accounts.json"
+CONFIG = REPO_ROOT / "config.json"
+
+DEFAULT_LOOKBACK_DAYS = 1
+BRIGHT_DATA_DATE = "%m-%d-%Y"  # Bright Data's MM-DD-YYYY window format
+
+
+def _lookback_days() -> int:
+    config = json.loads(CONFIG.read_text(encoding="utf-8")) if CONFIG.exists() else {}
+    return int(config.get("x_lookback_days", DEFAULT_LOOKBACK_DAYS))
 
 
 def main(argv: list[str]) -> int:
@@ -36,9 +53,18 @@ def main(argv: list[str]) -> int:
         posts: list[dict] = []
         note = "0 (no X accounts configured)"
     else:
-        # Slice B.3 fills the fetch here (BrightDataClient + XScraper per handle).
-        posts = []
-        note = "0 (fetch not yet implemented — Slice B.3)"
+        end = datetime.now(timezone.utc).date()
+        start = end - timedelta(days=_lookback_days())
+        scraper = XScraper(
+            BrightDataClient(api_key=os.environ["BRIGHT_DATA_KEY"]),
+            ErrorLog(workspace.errors),
+        )
+        posts = scraper.scrape(
+            handles,
+            start_date=start.strftime(BRIGHT_DATA_DATE),
+            end_date=end.strftime(BRIGHT_DATA_DATE),
+        )
+        note = f"{len(posts)} (from {len(handles)} account(s))"
 
     workspace.x_posts.write_text(json.dumps(posts, indent=2), encoding="utf-8")
     print(f"x posts: {note}")
