@@ -34,6 +34,12 @@ def write_corpus(ws: RunWorkspace, items: list[dict]) -> None:
     ws.corpus.write_text(json.dumps(items), encoding="utf-8")
 
 
+def write_skipped(ws: RunWorkspace, *, reason: str, corpus_size: int) -> None:
+    ws.skipped_clustering.write_text(
+        json.dumps({"reason": reason, "corpus_size": corpus_size}), encoding="utf-8"
+    )
+
+
 def test_renders_a_topic_card_with_name_description_and_summary(tmp_path: Path) -> None:
     ws = make_workspace(tmp_path)
     write_topics(
@@ -186,6 +192,80 @@ def test_other_notable_renders_as_one_liner_tail(tmp_path: Path) -> None:
     # The tail sits after the topic cards, in input order.
     assert html.index("The one topic") < html.index("Lone article one")
     assert html.index("Lone article one") < html.index("Lone article two")
+
+
+def test_light_signal_path_renders_without_synthesis_files(tmp_path: Path) -> None:
+    # On a slow day, clustering/recommendations never run, so neither
+    # trending_topics.json nor content_recommendations.json exists. The presence
+    # of skipped_clustering.json must switch the renderer to the light-signal
+    # path, which reads corpus directly and emits no topic cards.
+    ws = make_workspace(tmp_path)
+    write_skipped(ws, reason="corpus below clustering threshold", corpus_size=2)
+    write_corpus(
+        ws,
+        [
+            {"id": "c1", "source": "news", "account_or_outlet": "TechCrunch",
+             "posted_at": "", "text": "A lone AI item.", "url": "https://tc.example/a"},
+        ],
+    )
+
+    html = EmailRenderer(ws).render(run_id=ws.run_id)
+
+    # Renders despite the synthesis files being absent (full path would crash).
+    assert ws.run_id in html
+    # No topic-card section wrapper from the full path.
+    assert "margin-bottom:2em" not in html
+
+
+def test_light_signal_renders_corpus_size_note_explaining_the_skip(tmp_path: Path) -> None:
+    # The light-signal email must distinguish "quiet news day" from "pipeline
+    # misfire" — it states why clustering was skipped and the corpus size.
+    ws = make_workspace(tmp_path)
+    write_skipped(ws, reason="corpus below clustering threshold", corpus_size=3)
+    write_corpus(
+        ws,
+        [
+            {"id": "c1", "source": "news", "account_or_outlet": "Hacker News",
+             "posted_at": "", "text": "Item one.", "url": "https://hn.example/1"},
+        ],
+    )
+
+    html = EmailRenderer(ws).render(run_id=ws.run_id)
+
+    assert "corpus below clustering threshold" in html
+    assert "3" in html
+
+
+def test_light_signal_renders_corpus_items_as_one_liners(tmp_path: Path) -> None:
+    # With clustering skipped, the corpus itself is the Other Notable tail:
+    # each item renders as a linked outlet label followed by its text, in
+    # corpus order.
+    ws = make_workspace(tmp_path)
+    write_skipped(ws, reason="quiet day", corpus_size=3)
+    write_corpus(
+        ws,
+        [
+            {"id": "c1", "source": "news", "account_or_outlet": "Hacker News",
+             "posted_at": "", "text": "First quiet-day item.", "url": "https://hn.example/1"},
+            {"id": "c2", "source": "vendor_blogs", "account_or_outlet": "Anthropic",
+             "posted_at": "", "text": "Second quiet-day item.", "url": "https://claude.example/2"},
+            {"id": "c3", "source": "news", "account_or_outlet": "TechCrunch",
+             "posted_at": "", "text": "Third quiet-day item.", "url": "https://tc.example/3"},
+        ],
+    )
+
+    html = EmailRenderer(ws).render(run_id=ws.run_id)
+
+    # Each item: outlet name linked to its url, followed by its text.
+    assert 'href="https://hn.example/1"' in html
+    assert "Hacker News" in html
+    assert "First quiet-day item." in html
+    assert 'href="https://claude.example/2"' in html
+    assert "Anthropic" in html
+    assert "Second quiet-day item." in html
+
+    # Rendered in corpus order.
+    assert html.index("Hacker News") < html.index("Anthropic") < html.index("TechCrunch")
 
 
 def test_unexpected_extra_channel_in_ideas_renders_without_code_changes(tmp_path: Path) -> None:
