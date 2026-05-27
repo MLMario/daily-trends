@@ -30,18 +30,30 @@ def profile_url(handle: str) -> str:
     return f"https://x.com/{normalize_handle(handle)}"
 
 
-def _ref_populated(ref: object) -> bool:
-    """True when a parent/quote reference object actually points at a post."""
-    return isinstance(ref, dict) and bool(ref.get("post_id") or ref.get("url"))
+def _is_quote(quoted_post: object) -> bool:
+    """True when `quoted_post` points at a quoted tweet.
+
+    A real quote carries the quoted post's `post_id`/`url`; a non-quote is the
+    skeleton `{"photos": None, "videos": None}` (no `post_id`/`url`).
+    """
+    return isinstance(quoted_post, dict) and bool(
+        quoted_post.get("post_id") or quoted_post.get("url")
+    )
 
 
-def _handle_from_url(url: str) -> str:
-    """Bare lowercase handle from an x.com post URL (`/<handle>/status/<id>`)."""
-    parts = [p for p in (url or "").split("/") if p]
-    for i, part in enumerate(parts):
-        if part in ("x.com", "twitter.com") and i + 1 < len(parts):
-            return parts[i + 1].lower()
-    return ""
+def _parent_id(post: dict) -> str:
+    """The post_id this post is a reply to, or "" if it is not a reply.
+
+    The X dataset puts a populated `parent_post_details` on *every* record; on
+    an original or a quote it is **self-referential** (its `post_id` equals the
+    post's own `id`). A genuine reply is the case where the parent `post_id`
+    differs from the post's own `id`.
+    """
+    ppd = post.get("parent_post_details")
+    if not isinstance(ppd, dict):
+        return ""
+    parent_id = str(ppd.get("post_id") or "")
+    return parent_id if parent_id and parent_id != str(post.get("id") or "") else ""
 
 
 def _to_item(post: dict, source: str, *, summary: str | None = None) -> dict:
@@ -100,46 +112,50 @@ class XScraper:
         h = normalize_handle(handle)
         source = "@" + h
 
-        # Keep only this account's own non-quote posts. A populated parent that
-        # belongs to this same handle is a self-reply (a thread continuation);
-        # a parent belonging to anyone else is a reply-to-others and is dropped.
+        # Keep only this account's own original, non-quote posts. A reply whose
+        # parent is authored by this same account (numeric profile_id == the
+        # post's own user_id) is a self-reply (a thread continuation); a reply
+        # to anyone else is dropped. Nodes are keyed by the post's own `id` —
+        # the only id a parent reference exposes (there is no parent url).
         nodes: dict[str, dict] = {}
         parent_of: dict[str, str] = {}
         order: list[str] = []
         for post in raw_posts:
-            if normalize_handle(post.get("user_posted", "")) != h:
+            if post.get("is_repost") or normalize_handle(post.get("user_posted", "")) != h:
                 continue  # repost / not authored by this account
-            if _ref_populated(post.get("quoted_post")):
+            if _is_quote(post.get("quoted_post")):
                 continue  # quote tweet
-            parent_url = ""
-            if _ref_populated(post.get("parent_post_details")):
-                parent_url = post["parent_post_details"].get("url", "")
-                if _handle_from_url(parent_url) != h:
+            own_id = str(post.get("id") or "")
+            if not own_id:
+                continue
+            parent_id = _parent_id(post)
+            if parent_id:
+                ppd = post["parent_post_details"]
+                if str(ppd.get("profile_id") or "") != str(post.get("user_id") or ""):
                     continue  # reply to someone else
-            url = post["url"]
-            nodes[url] = post
-            order.append(url)
-            if parent_url:
-                parent_of[url] = parent_url
+            nodes[own_id] = post
+            order.append(own_id)
+            if parent_id:
+                parent_of[own_id] = parent_id
 
         # Each self-thread collapses to one item keyed on its topmost present
         # post: walk parent links up until a parent is missing (root in window)
         # or absent (root outside window — promote the topmost continuation).
-        def representative(url: str) -> str:
-            seen = {url}
-            while (parent := parent_of.get(url)) and parent in nodes and parent not in seen:
-                url = parent
-                seen.add(url)
-            return url
+        def representative(node_id: str) -> str:
+            seen = {node_id}
+            while (parent := parent_of.get(node_id)) and parent in nodes and parent not in seen:
+                node_id = parent
+                seen.add(node_id)
+            return node_id
 
         groups: dict[str, list[dict]] = {}
         group_order: list[str] = []
-        for url in order:
-            rep = representative(url)
+        for node_id in order:
+            rep = representative(node_id)
             if rep not in groups:
                 groups[rep] = []
                 group_order.append(rep)
-            groups[rep].append(nodes[url])
+            groups[rep].append(nodes[node_id])
 
         items: list[dict] = []
         for rep in group_order:
