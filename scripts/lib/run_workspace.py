@@ -1,11 +1,13 @@
 """Per-run output directory with typed paths for every pipeline artifact.
 
 Paths:
-  - news/articles.json         (news subagent output)
-  - vendor_blogs/posts.json    (vendor-blogs subagent output)
-  - corpus.json                (normalized union of sources)
-  - email_sent.html            (archived rendered HTML)
-  - errors.log                 (JSON-lines event log)
+  - news/articles.json              (news subagent output)
+  - vendor_blogs/posts.json         (vendor-blogs subagent output)
+  - corpus.json                     (normalized union of sources)
+  - trending_topics.json            (clustering subagent output)
+  - content_recommendations.json    (recommendations subagent output)
+  - email_sent.html                 (archived rendered HTML)
+  - errors.log                      (JSON-lines event log)
 
 Later slices add fields here (e.g. trending_topics.json), not new call sites.
 """
@@ -57,6 +59,14 @@ class RunWorkspace:
     @property
     def corpus(self) -> Path:
         return self.path / "corpus.json"
+
+    @property
+    def trending_topics(self) -> Path:
+        return self.path / "trending_topics.json"
+
+    @property
+    def content_recommendations(self) -> Path:
+        return self.path / "content_recommendations.json"
 
     @property
     def email_sent(self) -> Path:
