@@ -13,6 +13,11 @@ recommendations never ran, so the renderer reads only the skip flag and
 corpus.json. It emits no topic cards — just a corpus-size note explaining why
 clustering was skipped, followed by the corpus items as one-liners
 (account_or_outlet → url, then text).
+
+Both paths close with a shared Errors & Skips tail built from
+ErrorLog.summary(): one subsection per step (error count, warning count, then
+consequential-info rows as bullets), omitted entirely when the summary is empty.
+Pure-info entries (e.g. stage-timing markers) never reach it.
 """
 
 from __future__ import annotations
@@ -20,11 +25,34 @@ from __future__ import annotations
 import html
 import json
 
+from scripts.lib.error_log import ErrorLog, ErrorSummary
 from scripts.lib.run_workspace import RunWorkspace
 
 
 def _esc(value: str) -> str:
     return html.escape(value or "", quote=True)
+
+
+def _render_errors_section(summary: ErrorSummary) -> str:
+    if summary.is_empty:
+        return ""
+    blocks = []
+    for group in summary.groups:
+        bullets = "".join(f"<li>{_esc(msg)}</li>" for msg in group.consequential)
+        bullets_block = f"<ul>{bullets}</ul>" if bullets else ""
+        blocks.append(
+            '<div style="margin-bottom:1em">'
+            f"<h3>{_esc(group.step)}</h3>"
+            f"<p>{group.error_count} error(s), {group.warning_count} warning(s)</p>"
+            f"{bullets_block}"
+            "</div>"
+        )
+    return (
+        '<section style="margin-top:2em;border-top:1px solid #ccc;padding-top:1em">'
+        "<h2>Errors &amp; Skips</h2>"
+        f"{''.join(blocks)}"
+        "</section>"
+    )
 
 
 def _render_members(member_ids: list, corpus_by_id: dict) -> str:
@@ -108,6 +136,9 @@ class EmailRenderer:
             return self._render_light_signal(run_id=run_id)
         return self._render_topic_cards(run_id=run_id)
 
+    def _errors_section(self) -> str:
+        return _render_errors_section(ErrorLog(self._ws.errors).summary())
+
     def _render_light_signal(self, *, run_id: str) -> str:
         skip = json.loads(self._ws.skipped_clustering.read_text(encoding="utf-8"))
         reason = _esc(skip.get("reason", ""))
@@ -125,6 +156,7 @@ class EmailRenderer:
             f"<h1>daily-trends — Run {_esc(run_id)}</h1>"
             f"{note}"
             f"{one_liners}"
+            f"{self._errors_section()}"
             "</body></html>"
         )
         self._ws.email_sent.write_text(html_doc, encoding="utf-8")
@@ -155,6 +187,7 @@ class EmailRenderer:
             f"<h1>daily-trends — Run {_esc(run_id)}</h1>"
             f"{cards}"
             f"{other_notable}"
+            f"{self._errors_section()}"
             "</body></html>"
         )
         self._ws.email_sent.write_text(html_doc, encoding="utf-8")
