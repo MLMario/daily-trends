@@ -42,11 +42,12 @@ data/cache/
 # Pipeline run artifacts (per-run output trees)
 runs/
 
-# Claude local config — ignore everything except the project's run-trends skill
+# Claude local config — ignore everything except the project's own skills
 .claude/*
 !.claude/skills/
 .claude/skills/*
 !.claude/skills/run-trends/
+!.claude/skills/recluster/
 skills-lock.json
 
 docs/

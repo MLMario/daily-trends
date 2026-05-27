@@ -4,6 +4,7 @@ Paths:
   - news/articles.json              (news subagent output)
   - vendor_blogs/posts.json         (vendor-blogs subagent output)
   - corpus.json                     (normalized union of sources)
+  - lineage.json                    (recluster provenance: {source_run_id, reused, created_at})
   - skipped_clustering.json         (slow-day flag: {reason, corpus_size})
   - trending_topics.json            (clustering subagent output)
   - content_recommendations.json    (recommendations subagent output)
@@ -15,6 +16,7 @@ Later slices add fields here (e.g. trending_topics.json), not new call sites.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +25,23 @@ from pathlib import Path
 def _utc_minute_run_id(now: datetime | None = None) -> str:
     when = now or datetime.now(timezone.utc)
     return when.strftime("%Y-%m-%dT%H-%MZ")
+
+
+def lineage_record(
+    source_run_id: str, *, reused: Iterable[str], now: datetime | None = None
+) -> dict:
+    """Provenance record for a recluster — which run its inputs came from and when.
+
+    Canonical schema for `lineage.json`: the source run id, the artifacts reused
+    byte-for-byte from it, and the new run's creation time. `now` is injectable so
+    the record is deterministic under test.
+    """
+    when = now or datetime.now(timezone.utc)
+    return {
+        "source_run_id": source_run_id,
+        "reused": list(reused),
+        "created_at": when.isoformat(),
+    }
 
 
 @dataclass(frozen=True)
@@ -60,6 +79,10 @@ class RunWorkspace:
     @property
     def corpus(self) -> Path:
         return self.path / "corpus.json"
+
+    @property
+    def lineage(self) -> Path:
+        return self.path / "lineage.json"
 
     @property
     def skipped_clustering(self) -> Path:
