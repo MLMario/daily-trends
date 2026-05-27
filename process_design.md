@@ -22,15 +22,18 @@ The full pipeline ships in three additive slices. Each slice is a working end-to
 - All downstream steps (normalize → cluster → recommendations → email) wired and tested.
 - Two orchestration skills shipped: `run-trends` and `recluster`.
 
-**Slice B — Instagram Reels.**
+**Slice B — X posts.** _(reordered ahead of Instagram on 2026-05-26 to match build order)_
+- Bright Data X Posts dataset (`gd_lwxkxvnf1cynvib9co`), **discover-by-profile-URL** mode with `start_date`/`end_date` (MM-DD-YYYY) — resolves the former Open Question on date-range listing (confirmed supported).
+- Deterministic Python (`scripts/scrape_x.py` + `scripts/lib/x_scraper.py`), **not** a subagent: async trigger → poll snapshot → download. One snapshot per account, run concurrently with the news + vendor subagents in the source-fetch stage.
+- Ingests **original top-level posts only** (replies, quote tweets, reposts filtered out); multi-tweet **threads are stitched** (root + self-reply continuations) into one corpus item.
+- Maps Bright Data fields → the uniform raw schema inside `scrape_x.py` (`source`=handle, `summary`=post/thread text, `published_at`=date_posted), so `CorpusNormalizer` gains one `_sources()` reader and nothing else. Engagement metrics are not persisted to the corpus.
+- Volume control is the lookback window alone (`x_lookback_days`, default **1**, no per-account cap). `CorpusNormalizer`'s word-count floor becomes per-source so short posts survive (`x`=5, others=30).
+- **Opt-in via `creators/accounts.json[x]`** (list of handle strings; profile URL derived as `https://x.com/<handle>`). Empty list = no Bright Data call; pre-flight requires `BRIGHT_DATA_KEY` only when accounts are configured.
+
+**Slice C — Instagram Reels.**
 - Bright Data Web Scraper Dataset API for metadata + yt-dlp for download.
 - faster-whisper transcription with auto-detect language + translate-to-English when non-English.
 - `creators/accounts.json[instagram]` populated.
-
-**Slice C — X posts.**
-- Bright Data X Posts Dataset API.
-- `creators/accounts.json[x]` populated.
-- Resolves Open Question on date-range listing capability.
 
 Each slice extends the same `CorpusNormalizer` module additively (more readers, no other module changes) and the same `config.json` (more keys: `instagram_lookback_days`, `x_lookback_days`, etc.). Subagent prompts (clustering, recommendations) do not change between slices — they operate on the unified corpus schema.
 
@@ -58,7 +61,7 @@ Slice A active steps drawn solid; slices B/C steps shown for context.
         |        |            |            |                          |
         v        v            v            v                          v
 [1. IG Reels] [2. Whisper] [3. X posts] [4a. News subagent]   [4b. Vendor-blogs subagent]
-  (slice B)   (slice B)    (slice C)     - WebFetch                  - WebFetch
+  (slice C)   (slice C)    (slice B)     - WebFetch                  - WebFetch
                                          - HN front + TC AI          - claude.com + openai devs
                                          - subagent AI filter        - lookback 7d
                                          - no lookback config        - first-party canonical
@@ -107,9 +110,9 @@ Slice A rows are marked **[A]**; slice B with **[B]**; slice C with **[C]**.
 
 | Step | Inputs (Materials) | Outputs (Materials) | Capabilities (Tools) | Awareness Check |
 |------|--------------------|---------------------|----------------------|-----------------|
-| **[B]** 1. Scrape IG Reels | `config.json` (ig_lookback_days), `creators/accounts.json[instagram]` | Per Reel: `<post_id>.mp4` + `<post_id>.meta.json` | Python + Bright Data Web Scraper API + `yt-dlp` | yt-dlp returned URL; log+skip on fail. API uses `post_type=reel`. Empty account = info log. |
-| **[B]** 2. Transcribe Reels | `<post_id>.mp4` from step 1 | Per Reel: `<post_id>.transcript.json` (`{text, text_en?, language, duration_sec}`) | Python + `faster-whisper` (small, int8); PyAV-bundled ffmpeg | Auto-detect language; non-English also gets `task="translate"`. try/except each call -> errors.log + skip. |
-| **[C]** 3. Scrape X posts | `config.json` (x_lookback_days), `creators/accounts.json[x]` | `x/<account>.json` containing `[{post_id, account, posted_at, text, url}]` | Python + Bright Data X Posts Dataset API | Empty account = info log. Pending: verify date-range listing capability. |
+| **[C]** 1. Scrape IG Reels | `config.json` (ig_lookback_days), `creators/accounts.json[instagram]` | Per Reel: `<post_id>.mp4` + `<post_id>.meta.json` | Python + Bright Data Web Scraper API + `yt-dlp` | yt-dlp returned URL; log+skip on fail. API uses `post_type=reel`. Empty account = info log. |
+| **[C]** 2. Transcribe Reels | `<post_id>.mp4` from step 1 | Per Reel: `<post_id>.transcript.json` (`{text, text_en?, language, duration_sec}`) | Python + `faster-whisper` (small, int8); PyAV-bundled ffmpeg | Auto-detect language; non-English also gets `task="translate"`. try/except each call -> errors.log + skip. |
+| **[B]** 3. Scrape X posts | `config.json` (x_lookback_days, default 1), `creators/accounts.json[x]` (handle strings) | `x/posts.json` — uniform raw schema `[{url, title, source, published_at, summary}]` (source=handle, summary=post/thread text) | Python (`scrape_x.py` + `lib/x_scraper.py`) + Bright Data X dataset, discover-by-profile, one snapshot per account | Originals only (replies/quotes/reposts filtered); threads stitched. Empty account = info log; per-account failure/timeout = warning + skip (non-fatal). Token required only when accounts configured. |
 | **[A]** 4a. News-search subagent | `prompts/news_search_prompt.md` (static) | `news/articles.json` — `[{url, title, source, published_at, summary}]` | Agent tool (general-purpose, Sonnet) + WebFetch | Fetch `news.ycombinator.com/` and `techcrunch.com/category/artificial-intelligence/`. Apply AI-relevance judgment per item. No date config — "what's there now" is the window. |
 | **[A]** 4b. Vendor-blogs subagent | `prompts/vendor_blogs_prompt.md` (static), `config.vendor_blogs[]`, `config.vendor_blogs_lookback_days` (default 7) | `vendor_blogs/posts.json` — same schema as news | Agent tool (general-purpose, Sonnet) + WebFetch | First-party canonical — include all posts in window, no relevance gate. Runs concurrently with 4a. |
 | **[A]** 5. Normalize corpus | All available step 1-4 outputs | `corpus.json` — `[{id, source, account_or_outlet, posted_at, text, url}]` | Python (CorpusNormalizer) | Drop records `word_count < 30`; log dropped count as consequential-info. |
@@ -179,7 +182,7 @@ daily-trends/
     └── 2026-05-22T08-00/           run_id = UTC ISO timestamp, minute precision
         ├── news/articles.json
         ├── vendor_blogs/posts.json
-        │   (slices B/C add: instagram/<account>/{<post_id>.mp4, .meta.json, .transcript.json}, x/<account>.json)
+        │   (slice B adds: x/posts.json; slice C adds: instagram/<account>/{<post_id>.mp4, .meta.json, .transcript.json})
         ├── corpus.json
         ├── skipped_clustering.json (only on slow days)
         ├── trending_topics.json    (absent on slow days)
@@ -202,10 +205,10 @@ daily-trends/
 | Deterministic data transforms (normalize, render, dispatch) | Python deep modules invoked via Bash entry-point scripts |
 | LLM synthesis (clustering, recommendations) | Fresh-context subagents via Agent tool (general-purpose) |
 | Send HTML email with attachments | Python (GmailSender), google-api-python-client (Gmail API, scope `gmail.send`) |
-| (Slice B) Scrape IG metadata + filter videos | Python + Bright Data Web Scraper API |
-| (Slice B) Download Reel `.mp4` binary | yt-dlp invoked from Python |
-| (Slice B) Local speech-to-text + translation | `faster-whisper` (small, int8) in Python |
-| (Slice C) Scrape X posts per account per date range | Python + Bright Data X Posts Dataset API |
+| (Slice B) Scrape X posts per account per date range | Python + Bright Data X dataset (discover-by-profile) |
+| (Slice C) Scrape IG metadata + filter videos | Python + Bright Data Web Scraper API |
+| (Slice C) Download Reel `.mp4` binary | yt-dlp invoked from Python |
+| (Slice C) Local speech-to-text + translation | `faster-whisper` (small, int8) in Python |
 
 **Harness:** Claude Code main session as orchestrator. Skill-based entry (`.claude/skills/run-trends/SKILL.md` and `.claude/skills/recluster/SKILL.md`). Reasoning: the workflow blends deterministic Python with LLM judgment stages and benefits from Claude Code's ability to drive both via Bash and Agent tools without leaving the local environment. State lives on local disk; secrets stay in `.env` and `credentials/` outside any cloud harness. Migration to a headless Python orchestrator using the Anthropic SDK is anticipated for scheduled production runs (Open Question — Cadence), but the skill body is designed to translate mechanically.
 
@@ -362,9 +365,12 @@ Before trusting the automation, verify:
 - ~~Orchestrator shape.~~ → Two custom skills (`run-trends`, `recluster`). Headless Python orchestrator deferred until scheduling is decided.
 - ~~Topical filter for news.~~ → AI-only, hardcoded into the news subagent prompt.
 
+**Resolved by grill-with-docs session 2026-05-26 (Slice B scoping):**
+
+- ~~Bright Data X Dataset API account+date listing.~~ → **Confirmed supported.** Bright Data X posts dataset `gd_lwxkxvnf1cynvib9co`, "discover by profile URL" mode, accepts `start_date`/`end_date` (MM-DD-YYYY) per profile. No fallback needed. Provider chosen over Apify (both keys present in `.env`); see ADR.
+
 **Still open:**
 
-- **Bright Data X Dataset API account+date listing.** Verify against Bright Data docs before writing `scrape_x.py` in Slice C; if not supported, plan a fallback (search-by-username with date filter, or a different X scraper).
 - **Cadence + trigger mechanism.** Slice A is manual-trigger only. Pick daily vs. other cadence + Windows Task Scheduler vs. manual `claude` invocation after first stable run. Likely requires migration to headless Python orchestrator at that point.
 - **Whisper hardware path.** Determine CPU vs. GPU for Slice B based on local hardware; update `requirements.txt` accordingly (CUDA wheels vs. CPU).
 - **Cost monitoring on Bright Data.** Free tier is 5,000 requests/month; track usage when slices B/C land.
