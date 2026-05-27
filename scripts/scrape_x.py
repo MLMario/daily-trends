@@ -22,7 +22,7 @@ from pathlib import Path
 
 from scripts.lib.bright_data_client import BrightDataClient
 from scripts.lib.error_log import ErrorLog
-from scripts.lib.preflight import x_handles
+from scripts.lib.preflight import load_dotenv, x_handles
 from scripts.lib.run_workspace import RunWorkspace
 from scripts.lib.x_scraper import XScraper
 
@@ -30,6 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 RUNS_ROOT = REPO_ROOT / "runs"
 ACCOUNTS = REPO_ROOT / "creators" / "accounts.json"
 CONFIG = REPO_ROOT / "config.json"
+ENV_FILE = REPO_ROOT / ".env"
 
 DEFAULT_LOOKBACK_DAYS = 1
 BRIGHT_DATA_DATE = "%m-%d-%Y"  # Bright Data's MM-DD-YYYY window format
@@ -53,6 +54,7 @@ def main(argv: list[str]) -> int:
         posts: list[dict] = []
         note = "0 (no X accounts configured)"
     else:
+        load_dotenv(ENV_FILE)  # BRIGHT_DATA_KEY lives in .env; this process must load it
         end = datetime.now(timezone.utc).date()
         start = end - timedelta(days=_lookback_days())
         scraper = XScraper(

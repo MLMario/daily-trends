@@ -8,7 +8,9 @@ mandatory exactly when X is opted in.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
+from pathlib import Path
 
 
 def parse_env_file(text: str) -> dict[str, str]:
@@ -31,6 +33,21 @@ def parse_env_file(text: str) -> dict[str, str]:
         if key:
             env[key] = value
     return env
+
+
+def load_dotenv(path: Path) -> None:
+    """Fold a `.env` file into the process environment, if it exists.
+
+    A no-op when the file is absent. Real environment variables win over `.env`
+    (``setdefault``), so an explicitly exported secret is never overridden. Each
+    entry point that needs a secret must call this itself — one process's load
+    does not carry into another (e.g. init_run's load does not reach the
+    separate scrape_x process).
+    """
+    if not path.exists():
+        return
+    for key, value in parse_env_file(path.read_text(encoding="utf-8")).items():
+        os.environ.setdefault(key, value)
 
 
 def x_handles(accounts: dict | None) -> list[str]:

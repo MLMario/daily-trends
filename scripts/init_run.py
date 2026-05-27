@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-from scripts.lib.preflight import missing_prerequisites, parse_env_file, x_handles
+from scripts.lib.preflight import load_dotenv, missing_prerequisites, x_handles
 from scripts.lib.run_workspace import RunWorkspace
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -24,14 +24,6 @@ ENV_FILE = REPO_ROOT / ".env"
 RUNS_ROOT = REPO_ROOT / "runs"
 
 
-def _load_dotenv(path: Path) -> None:
-    """Fold `.env` into the process environment without clobbering real vars."""
-    if not path.exists():
-        return
-    for key, value in parse_env_file(path.read_text(encoding="utf-8")).items():
-        os.environ.setdefault(key, value)
-
-
 def _read_accounts(path: Path) -> dict | None:
     if not path.exists():
         return None
@@ -39,7 +31,7 @@ def _read_accounts(path: Path) -> dict | None:
 
 
 def main() -> int:
-    _load_dotenv(ENV_FILE)
+    load_dotenv(ENV_FILE)
 
     missing = missing_prerequisites(
         config_exists=CONFIG.exists(),

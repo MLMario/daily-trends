@@ -7,7 +7,41 @@ contract without touching the filesystem or the real environment.
 
 from __future__ import annotations
 
-from scripts.lib.preflight import missing_prerequisites, parse_env_file, x_handles
+import os
+
+from scripts.lib.preflight import (
+    load_dotenv,
+    missing_prerequisites,
+    parse_env_file,
+    x_handles,
+)
+
+
+def test_load_dotenv_folds_keys_into_the_process_environment(tmp_path) -> None:
+    # Every entry point that needs a secret must load .env itself — init_run's
+    # load does not survive into the separate scrape_x process.
+    env_file = tmp_path / ".env"
+    env_file.write_text("DAILY_TRENDS_PROBE=secret-token\n", encoding="utf-8")
+    os.environ.pop("DAILY_TRENDS_PROBE", None)
+    try:
+        load_dotenv(env_file)
+        assert os.environ["DAILY_TRENDS_PROBE"] == "secret-token"
+    finally:
+        os.environ.pop("DAILY_TRENDS_PROBE", None)
+
+
+def test_load_dotenv_does_not_clobber_an_existing_real_var(tmp_path, monkeypatch) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("DAILY_TRENDS_PROBE=from-dotenv\n", encoding="utf-8")
+    monkeypatch.setenv("DAILY_TRENDS_PROBE", "from-real-env")
+
+    load_dotenv(env_file)
+
+    assert os.environ["DAILY_TRENDS_PROBE"] == "from-real-env"
+
+
+def test_load_dotenv_is_a_noop_when_the_file_is_absent(tmp_path) -> None:
+    load_dotenv(tmp_path / "does-not-exist.env")  # must not raise
 
 
 def test_configured_x_accounts_without_token_is_missing() -> None:
