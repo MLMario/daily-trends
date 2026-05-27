@@ -14,6 +14,14 @@ For each post within the window, extract:
 
 These are first-party sources we have chosen to trust. Include **every** post whose publish date falls within the lookback window. Do **not** apply a topical/relevance filter and do **not** judge whether a post is "interesting" — if it is in the window, keep it. Only exclude a post if you cannot determine that it was published within the window.
 
+## Reporting fetch failures
+
+If a configured blog cannot be fetched (HTTP 404/5xx, timeout, unreachable, or unparseable feed), **do not fail the run** — skip that blog, keep going with the rest, and record the failure so it surfaces in the digest's Errors & Skips section under the `vendor_blogs` step. Append one `warning` line to `runs/<run_id>/errors.log` for each blog you could not reach, naming the blog and what happened, using the `ErrorLog` helper (the run ID is in your inputs):
+
+```
+uv run python -c "from pathlib import Path; from scripts.lib.error_log import ErrorLog; ErrorLog(Path('runs/<run_id>/errors.log')).log(step='vendor_blogs', severity='warning', message='Anthropic blog unreachable: HTTP 404 at https://claude.com/blog')"
+```
+
 ## Output format
 
 Write a single JSON file to the path passed in your inputs (typically `runs/<run_id>/vendor_blogs/posts.json`). It must be a JSON array of objects with exactly the fields above:

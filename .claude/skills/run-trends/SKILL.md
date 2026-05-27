@@ -7,6 +7,18 @@ description: Run the daily-trends pipeline end-to-end against today's news and d
 
 Orchestrate the pipeline: pre-flight → news + vendor-blogs subagents (parallel) → normalize → slow-day gate → cluster → recommend → render + dispatch the email. On a slow day (corpus below threshold), the gate skips clustering + recommendations and the email renders an alternate light-signal layout.
 
+## Stage-boundary timing
+
+Append one pure-info entry recording the stage boundary at the start of each numbered step below — except `init_run`, whose marker lands immediately *after* step 1 creates the run dir (you cannot write to `errors.log` before the dir exists). The `ErrorLog` schema auto-stamps each line with a UTC `timestamp`, so wall-clock spend per stage becomes inspectable in `errors.log` later. These are **pure info** (no `kind`), so they never appear in the email's Errors & Skips section — they exist only for after-the-fact analysis.
+
+Use these step tokens, one marker per stage: `init_run`, `source-fetch`, `normalize`, `slow-day`, `cluster`, `recommend`, `render`. (The fetch stage runs two sources in parallel, so its *failures* are attributed per-source under `news` / `vendor_blogs` in step 3 — but the single timing marker for the whole stage uses `source-fetch`.) For example, before fetching:
+
+```
+uv run python -c "from pathlib import Path; from scripts.lib.error_log import ErrorLog; ErrorLog(Path('runs/<run_id>/errors.log')).log(step='source-fetch', severity='info', message='stage start: source-fetch')"
+```
+
+Skip the marker for any stage the slow-day gate skips (cluster, recommend).
+
 ## Steps
 
 1. **Pre-flight + new run.** Bash:
@@ -33,15 +45,16 @@ Orchestrate the pipeline: pre-flight → news + vendor-blogs subagents (parallel
 
    Issue **both** Agent calls in a **single tool block** so they run in parallel. Both use `subagent_type=general-purpose`, `model=sonnet`, fresh context, WebFetch available.
 
-3. **Record source-fetch outcomes (non-fatal).** After both subagents return, inspect each output file. None of these abort the run:
+3. **Record source-fetch outcomes (non-fatal).** After both subagents return, inspect each output file. Attribute each event to its **source-specific step** — `news` for the news subagent, `vendor_blogs` for the vendor-blogs subagent — so the email's Errors & Skips section pins a failure to the source that caused it. None of these abort the run:
 
-   - A subagent's output file is missing or unparseable → log a `warning` (step `fetch`) and continue.
-   - `runs/<run_id>/vendor_blogs/posts.json` is an empty array → log an **`info`**-level note (step `fetch`) that no vendor-blog posts fell in the lookback window. This is normal, **not an error**.
+   - A subagent's output file is missing or unparseable → log a `warning` under that source's step (`news` or `vendor_blogs`) and continue.
+   - `runs/<run_id>/vendor_blogs/posts.json` is an empty array → log an **`info`**-level note (step `vendor_blogs`) that no vendor-blog posts fell in the lookback window. This is normal, **not an error**.
+   - Each subagent also logs its own per-source fetch failures (e.g. a blog URL returning 404) under the same step token — see the subagent prompts. Those entries are already in `errors.log` by the time you inspect the outputs; do not duplicate them.
 
    Append events with the `ErrorLog` helper so each line matches the JSON-lines schema, e.g.:
 
    ```
-   uv run python -c "from pathlib import Path; from scripts.lib.error_log import ErrorLog; ErrorLog(Path('runs/<run_id>/errors.log')).log(step='fetch', severity='info', message='vendor_blogs: no posts in the lookback window')"
+   uv run python -c "from pathlib import Path; from scripts.lib.error_log import ErrorLog; ErrorLog(Path('runs/<run_id>/errors.log')).log(step='vendor_blogs', severity='info', message='no posts in the lookback window')"
    ```
 
 4. **Normalize.** Bash:

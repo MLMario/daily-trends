@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 from scripts.lib.email_renderer import EmailRenderer
+from scripts.lib.error_log import ErrorLog
 from scripts.lib.run_workspace import RunWorkspace
 
 
@@ -266,6 +267,109 @@ def test_light_signal_renders_corpus_items_as_one_liners(tmp_path: Path) -> None
 
     # Rendered in corpus order.
     assert html.index("Hacker News") < html.index("Anthropic") < html.index("TechCrunch")
+
+
+def test_full_path_appends_errors_and_skips_section_grouped_by_step(tmp_path: Path) -> None:
+    # When the run logged failures/skips, the topic-card email carries a tail
+    # Errors & Skips section, one subsection per step, after the topic content.
+    ws = make_workspace(tmp_path)
+    write_topics(
+        ws,
+        [{"topic_id": "t1", "topic_name": "A topic", "description": "d1",
+          "conversation_summary": "s1", "member_ids": []}],
+    )
+    write_recommendations(ws, [])
+    write_corpus(ws, [])
+    log = ErrorLog(ws.errors)
+    log.log(step="fetch", severity="warning", message="vendor_blogs slow")
+    log.log(step="cluster", severity="error", message="bad clustering output")
+
+    html = EmailRenderer(ws).render(run_id=ws.run_id)
+
+    assert "Errors &amp; Skips" in html
+    # Both steps appear, after the topic content.
+    assert "fetch" in html and "cluster" in html
+    assert html.index("A topic") < html.index("Errors &amp; Skips")
+    assert html.index("Errors &amp; Skips") < html.index("fetch") < html.index("cluster")
+
+
+def test_light_signal_path_appends_errors_and_skips_section(tmp_path: Path) -> None:
+    # The slow-day email is exactly where pipeline health matters most, so it
+    # carries the same Errors & Skips tail when the run logged anything.
+    ws = make_workspace(tmp_path)
+    write_skipped(ws, reason="quiet day", corpus_size=2)
+    write_corpus(
+        ws,
+        [{"id": "c1", "source": "news", "account_or_outlet": "Hacker News",
+          "posted_at": "", "text": "A lone item.", "url": "https://hn.example/1"}],
+    )
+    log = ErrorLog(ws.errors)
+    log.log(step="normalize", severity="info",
+            message="dropped 3 item(s) with word_count < 30", kind="consequential")
+
+    html = EmailRenderer(ws).render(run_id=ws.run_id)
+
+    assert "Errors &amp; Skips" in html
+    assert "normalize" in html
+    # The consequential row renders as a bullet, HTML-escaped (< → &lt;).
+    assert "dropped 3 item(s) with word_count &lt; 30" in html
+    # Tail position: after the corpus one-liners.
+    assert html.index("A lone item.") < html.index("Errors &amp; Skips")
+
+
+def test_errors_section_omitted_when_summary_is_empty(tmp_path: Path) -> None:
+    # No section when nothing was logged (full path), and — critically — none
+    # when the log holds only pure-info stage-timing markers (light-signal path):
+    # those exist for later analysis and must never surface in the inbox.
+    a = tmp_path / "a"
+    a.mkdir()
+    full = make_workspace(a)
+    write_topics(full, [{"topic_id": "t1", "topic_name": "Quiet topic", "description": "d",
+                         "conversation_summary": "s", "member_ids": []}])
+    write_recommendations(full, [])
+    write_corpus(full, [])
+    full_html = EmailRenderer(full).render(run_id=full.run_id)
+    assert "Errors &amp; Skips" not in full_html
+
+    b = tmp_path / "b"
+    b.mkdir()
+    light = make_workspace(b)
+    write_skipped(light, reason="quiet day", corpus_size=1)
+    write_corpus(light, [{"id": "c1", "source": "news", "account_or_outlet": "HN",
+                          "posted_at": "", "text": "An item.", "url": "https://hn.example/1"}])
+    timing = ErrorLog(light.errors)
+    timing.log(step="init_run", severity="info", message="start 2026-05-27T12:00:00Z")
+    timing.log(step="render", severity="info", message="start 2026-05-27T12:05:00Z")
+    light_html = EmailRenderer(light).render(run_id=light.run_id)
+    assert "Errors &amp; Skips" not in light_html
+
+
+def test_consequential_rows_render_under_their_own_step(tmp_path: Path) -> None:
+    # Multiple steps with consequential info: each row must sit beneath its own
+    # step heading, in step first-seen order — not pooled into one list.
+    ws = make_workspace(tmp_path)
+    write_topics(ws, [{"topic_id": "t1", "topic_name": "T", "description": "d",
+                       "conversation_summary": "s", "member_ids": []}])
+    write_recommendations(ws, [])
+    write_corpus(ws, [])
+    log = ErrorLog(ws.errors)
+    log.log(step="normalize", severity="info",
+            message="dropped 5 short items", kind="consequential")
+    log.log(step="recommend", severity="warning", message="thin ideas")
+    log.log(step="recommend", severity="info",
+            message="2 topics got no ideas", kind="consequential")
+
+    html = EmailRenderer(ws).render(run_id=ws.run_id)
+
+    # Each consequential row nests under its step, steps in first-seen order.
+    assert (
+        html.index("normalize")
+        < html.index("dropped 5 short items")
+        < html.index("recommend")
+        < html.index("2 topics got no ideas")
+    )
+    # recommend's counts reflect its one warning.
+    assert "0 error(s), 1 warning(s)" in html
 
 
 def test_unexpected_extra_channel_in_ideas_renders_without_code_changes(tmp_path: Path) -> None:
