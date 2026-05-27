@@ -4,6 +4,7 @@ Paths:
   - news/articles.json              (news subagent output)
   - vendor_blogs/posts.json         (vendor-blogs subagent output)
   - corpus.json                     (normalized union of sources)
+  - skipped_clustering.json         (slow-day flag: {reason, corpus_size})
   - trending_topics.json            (clustering subagent output)
   - content_recommendations.json    (recommendations subagent output)
   - email_sent.html                 (archived rendered HTML)
@@ -59,6 +60,10 @@ class RunWorkspace:
     @property
     def corpus(self) -> Path:
         return self.path / "corpus.json"
+
+    @property
+    def skipped_clustering(self) -> Path:
+        return self.path / "skipped_clustering.json"
 
     @property
     def trending_topics(self) -> Path:
