@@ -26,6 +26,10 @@ def write_vendor_blogs(ws: RunWorkspace, posts: list[dict]) -> None:
     ws.vendor_blogs_posts.write_text(json.dumps(posts), encoding="utf-8")
 
 
+def write_x_posts(ws: RunWorkspace, posts: list[dict]) -> None:
+    ws.x_posts.write_text(json.dumps(posts), encoding="utf-8")
+
+
 def long_summary(words: int = 35) -> str:
     return " ".join(["word"] * words)
 
@@ -183,6 +187,76 @@ def test_drops_items_with_fewer_than_thirty_words(tmp_path: Path) -> None:
     assert urls == {"https://example.com/long", "https://example.com/exactly-30"}
 
 
+def test_per_source_floor_keeps_short_x_post_drops_short_news(tmp_path: Path) -> None:
+    # The word-count floor is per-source: a punchy ~5-word tweet clears the low
+    # x floor, while a sub-30-word news item in the same run is still dropped.
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    write_news_articles(
+        ws,
+        [
+            {
+                "url": "https://example.com/short-news",
+                "title": "Short news",
+                "source": "Hacker News",
+                "published_at": "2026-05-26T10:00:00Z",
+                "summary": " ".join(["w"] * 10),
+            }
+        ],
+    )
+    write_x_posts(
+        ws,
+        [
+            {
+                "url": "https://x.com/karpathy/status/1",
+                "title": "",
+                "source": "@karpathy",
+                "published_at": "2026-05-26T11:00:00Z",
+                "summary": "transformers are all you need",
+            }
+        ],
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    urls = {item["url"] for item in corpus}
+    assert urls == {"https://x.com/karpathy/status/1"}
+
+
+def test_x_posts_union_into_corpus_with_handle_as_account(tmp_path: Path) -> None:
+    # An X post in the uniform raw schema (source=handle, summary=text,
+    # published_at=timestamp) normalizes to a corpus item tagged source "x"
+    # with the handle in account_or_outlet — the same mapping every reader uses.
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    write_x_posts(
+        ws,
+        [
+            {
+                "url": "https://x.com/karpathy/status/123",
+                "title": "",
+                "source": "@karpathy",
+                "published_at": "2026-05-26T11:00:00Z",
+                "summary": long_summary(8),
+            }
+        ],
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    assert len(corpus) == 1
+    item = corpus[0]
+    assert set(item) == CORPUS_KEYS
+    assert item["source"] == "x"
+    assert item["account_or_outlet"] == "@karpathy"
+    assert item["posted_at"] == "2026-05-26T11:00:00Z"
+    assert item["url"] == "https://x.com/karpathy/status/123"
+    assert item["text"] == long_summary(8)
+    assert item["id"]
+
+
 def test_logs_dropped_count_as_consequential_info(tmp_path: Path) -> None:
     ws = make_workspace(tmp_path)
     log = ErrorLog(ws.errors)
@@ -222,6 +296,69 @@ def test_logs_dropped_count_as_consequential_info(tmp_path: Path) -> None:
     assert entry["step"] == "normalize"
     assert entry["severity"] == "info"
     assert "2" in entry["message"]
+
+
+def test_idempotency_and_drop_log_hold_with_x_present(tmp_path: Path) -> None:
+    # With X in the mix, the consequential drop-count log still reports one
+    # info entry counting every below-floor item across sources (a sub-30 news
+    # item + a sub-5 X post = 2), and a rerun reproduces identical corpus bytes.
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    write_news_articles(
+        ws,
+        [
+            {
+                "url": "https://example.com/news-long",
+                "title": "Long news",
+                "source": "Hacker News",
+                "published_at": "2026-05-26T10:00:00Z",
+                "summary": long_summary(40),
+            },
+            {
+                "url": "https://example.com/news-short",
+                "title": "Short news",
+                "source": "Hacker News",
+                "published_at": "2026-05-26T10:00:00Z",
+                "summary": " ".join(["w"] * 12),
+            },
+        ],
+    )
+    write_x_posts(
+        ws,
+        [
+            {
+                "url": "https://x.com/karpathy/status/1",
+                "title": "",
+                "source": "@karpathy",
+                "published_at": "2026-05-26T11:00:00Z",
+                "summary": "transformers are all you need",
+            },
+            {
+                "url": "https://x.com/karpathy/status/2",
+                "title": "",
+                "source": "@karpathy",
+                "published_at": "2026-05-26T11:05:00Z",
+                "summary": "ship it",
+            },
+        ],
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    urls = {item["url"] for item in corpus}
+    assert urls == {
+        "https://example.com/news-long",
+        "https://x.com/karpathy/status/1",
+    }
+    entries = consequential_entries(ws)
+    assert len(entries) == 1
+    assert entries[0]["step"] == "normalize"
+    assert entries[0]["severity"] == "info"
+    assert "2" in entries[0]["message"]
+    # idempotency: a second run rewrites identical corpus content
+    CorpusNormalizer(ws, log).run()
+    assert json.loads(ws.corpus.read_text(encoding="utf-8")) == corpus
 
 
 def test_idempotent_when_rerun_on_same_workspace(tmp_path: Path) -> None:

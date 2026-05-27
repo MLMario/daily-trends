@@ -3,6 +3,7 @@
 Paths:
   - news/articles.json              (news subagent output)
   - vendor_blogs/posts.json         (vendor-blogs subagent output)
+  - x/posts.json                    (X scraper output)
   - corpus.json                     (normalized union of sources)
   - lineage.json                    (recluster provenance: {source_run_id, reused, created_at})
   - skipped_clustering.json         (slow-day flag: {reason, corpus_size})
@@ -59,6 +60,7 @@ class RunWorkspace:
             )
         (path / "news").mkdir(parents=True, exist_ok=False)
         (path / "vendor_blogs").mkdir(exist_ok=False)
+        (path / "x").mkdir(exist_ok=False)
         return cls(run_id=run_id, path=path)
 
     @classmethod
@@ -75,6 +77,10 @@ class RunWorkspace:
     @property
     def vendor_blogs_posts(self) -> Path:
         return self.path / "vendor_blogs" / "posts.json"
+
+    @property
+    def x_posts(self) -> Path:
+        return self.path / "x" / "posts.json"
 
     @property
     def corpus(self) -> Path:

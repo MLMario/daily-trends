@@ -14,7 +14,10 @@ from pathlib import Path
 from scripts.lib.error_log import ErrorLog
 from scripts.lib.run_workspace import RunWorkspace
 
-MIN_WORDS = 30
+# Per-source word-count floor: short-form X posts survive while news/blog
+# stubs are still dropped. Sources absent from the map fall back to DEFAULT.
+DEFAULT_MIN_WORDS = 30
+MIN_WORDS_BY_SOURCE = {"news": 30, "vendor_blogs": 30, "x": 5}
 
 
 def _word_count(text: str) -> int:
@@ -51,6 +54,7 @@ class CorpusNormalizer:
         return [
             (self._ws.news_articles, "news"),
             (self._ws.vendor_blogs_posts, "vendor_blogs"),
+            (self._ws.x_posts, "x"),
         ]
 
     def run(self) -> list[dict]:
@@ -58,9 +62,10 @@ class CorpusNormalizer:
         dropped = 0
 
         for path, source in self._sources():
+            floor = MIN_WORDS_BY_SOURCE.get(source, DEFAULT_MIN_WORDS)
             for record in _read_records(path):
                 item = _to_corpus_item(record, source)
-                if _word_count(item["text"]) < MIN_WORDS:
+                if _word_count(item["text"]) < floor:
                     dropped += 1
                     continue
                 items.append(item)
@@ -69,7 +74,7 @@ class CorpusNormalizer:
         self._log.log(
             step="normalize",
             severity="info",
-            message=f"dropped {dropped} item(s) with word_count < {MIN_WORDS}",
+            message=f"dropped {dropped} item(s) below per-source word-count floor",
             kind="consequential",
         )
         return items
