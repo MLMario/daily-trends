@@ -10,6 +10,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "ctranslate2>=4.6.3",
+    "faster-whisper>=1.2.1",
+    "nvidia-cublas-cu12>=12.9.2.10",
+    "nvidia-cudnn-cu12==9.*",
     "pytest>=8.3.0",
     "yt-dlp>=2026.3.17",
 ]
