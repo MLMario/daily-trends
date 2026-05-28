@@ -50,4 +50,7 @@ runs/
 !.claude/skills/recluster/
 skills-lock.json
 
-docs/
+# Docs — ignore scratch dumps at the root of docs/, keep structured subdirs (ADRs, agent guides)
+docs/*
+!docs/adr/
+!docs/agents/
