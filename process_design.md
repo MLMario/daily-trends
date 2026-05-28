@@ -107,7 +107,7 @@ Slice A rows are marked **[A]**; slice B with **[B]**; slice C with **[C]**.
 | Step | Inputs (Materials) | Outputs (Materials) | Capabilities (Tools) | Awareness Check |
 |------|--------------------|---------------------|----------------------|-----------------|
 | **[B]** 1. Scrape IG Reels | `config.json` (instagram_lookback_days), `creators/accounts.json[instagram]` | Per Reel: `<post_id>.mp4` + `<post_id>.meta.json` | Python + Bright Data Web Scraper API (`gd_lyclm20il4r5helnj`, `discover_by=url`) + `yt-dlp` | yt-dlp returned URL; log+skip on fail. The reels-only dataset rejects a `post_type` field — omit it. Empty account = info log. See `docs/adr/0002-instagram-scraper-provider.md`. |
-| **[B]** 2. Transcribe Reels | `<post_id>.mp4` from step 1 | Per Reel: `<post_id>.transcript.json` (`{text, text_en?, language, duration_sec}`) | Python + `faster-whisper` (small, int8); PyAV-bundled ffmpeg | Auto-detect language; non-English also gets `task="translate"`. try/except each call -> errors.log + skip. |
+| **[B]** 2. Transcribe Reels | `<post_id>.mp4` from step 1 | Per Reel: `<post_id>.transcript.json` (`{text, text_en?, language, duration_sec}`) | Python + `faster-whisper` (small, float16 on GPU); PyAV-bundled ffmpeg | Auto-detect language; non-English also gets `task="translate"` (two-pass). try/except each call -> errors.log + skip. Hard-fail on silent CPU fallback. Windows: prepend `nvidia/{cublas,cudnn,cuda_nvrtc}/bin/` to PATH before import. See `docs/adr/0003-whisper-local-runtime.md`. |
 | **[C]** 3. Scrape X posts | `config.json` (x_lookback_days), `creators/accounts.json[x]` | `x/<account>.json` containing `[{post_id, account, posted_at, text, url}]` | Python + Bright Data X Posts Dataset API | **Deferred indefinitely (2026-05-28)** — three-provider investigation hit X's logged-out content gate. See `docs/adr/0001-x-scraper-provider.md`. |
 | **[A]** 4a. News-search subagent | `prompts/news_search_prompt.md` (static) | `news/articles.json` — `[{url, title, source, published_at, summary}]` | Agent tool (general-purpose, Sonnet) + WebFetch | Fetch `news.ycombinator.com/` and `techcrunch.com/category/artificial-intelligence/`. Apply AI-relevance judgment per item. No date config — "what's there now" is the window. |
 | **[A]** 4b. Vendor-blogs subagent | `prompts/vendor_blogs_prompt.md` (static), `config.vendor_blogs[]`, `config.vendor_blogs_lookback_days` (default 7) | `vendor_blogs/posts.json` — same schema as news | Agent tool (general-purpose, Sonnet) + WebFetch | First-party canonical — include all posts in window, no relevance gate. Runs concurrently with 4a. |
@@ -203,7 +203,7 @@ daily-trends/
 | Send HTML email with attachments | Python (GmailSender), google-api-python-client (Gmail API, scope `gmail.send`) |
 | (Slice B) Scrape IG metadata + filter videos | Python + Bright Data Web Scraper API |
 | (Slice B) Download Reel `.mp4` binary | yt-dlp invoked from Python |
-| (Slice B) Local speech-to-text + translation | `faster-whisper` (small, int8) in Python |
+| (Slice B) Local speech-to-text + translation | `faster-whisper` (small, float16 on GPU; int8 CPU fallback) in Python — see ADR-0003 |
 | (Slice C) Scrape X posts per account per date range | Python + Bright Data X Posts Dataset API |
 
 **Harness:** Claude Code main session as orchestrator. Skill-based entry (`.claude/skills/run-trends/SKILL.md` and `.claude/skills/recluster/SKILL.md`). Reasoning: the workflow blends deterministic Python with LLM judgment stages and benefits from Claude Code's ability to drive both via Bash and Agent tools without leaving the local environment. State lives on local disk; secrets stay in `.env` and `credentials/` outside any cloud harness. Migration to a headless Python orchestrator using the Anthropic SDK is anticipated for scheduled production runs (Open Question — Cadence), but the skill body is designed to translate mechanically.
@@ -365,8 +365,11 @@ Before trusting the automation, verify:
 
 - ~~Bright Data X Dataset API account+date listing.~~ → **Capability confirmed, slice deferred anyway.** Bright Data's discover-by-profile mode does accept `start_date`/`end_date` (MM-DD-YYYY) — but the same investigation revealed that all unauthenticated X providers (Bright Data, Apify Free, scrapegraphAI) hit X's logged-out content gate: small accounts return zero records, large accounts return stale snapshots. The fallback (a different X scraper) was tested across two more providers and falsified for the same root cause. Slice C is deferred until an authenticated session-pool provider is funded. See `docs/adr/0001-x-scraper-provider.md`.
 
+**Resolved by Slice B Whisper feasibility 2026-05-28:**
+
+- ~~Whisper hardware path.~~ → **GPU via `faster-whisper` `small` with `compute_type="float16"` on the operator's RTX 5070 Ti.** The originally locked `int8` quantization is broken on Blackwell sm_120 (CTranslate2 4.6.2 explicitly disabled INT8 there); `float16` runs at ~5.5 s warm-cache per ~3 min Reel and costs ~1.3 GB VRAM of 16 GB. Dev-deps already added (`faster-whisper>=1.2.1`, `ctranslate2>=4.6.3`, `nvidia-cublas-cu12`, `nvidia-cudnn-cu12==9.*`); they graduate to runtime when Slice B.4 lands `scripts/transcribe_reels.py`. Windows runtime constraint: prepend wheel-installed `nvidia/{cublas,cudnn,cuda_nvrtc}/bin/` to `PATH` before importing `faster_whisper`. See `docs/adr/0003-whisper-local-runtime.md`.
+
 **Still open:**
 
 - **Cadence + trigger mechanism.** Slice A is manual-trigger only. Pick daily vs. other cadence + Windows Task Scheduler vs. manual `claude` invocation after first stable run. Likely requires migration to headless Python orchestrator at that point.
-- **Whisper hardware path.** Determine CPU vs. GPU for Slice B based on local hardware; update `requirements.txt` accordingly (CUDA wheels vs. CPU).
 - **Cost monitoring on Bright Data.** Free tier is 5,000 requests/month; track usage when Slice B lands.
