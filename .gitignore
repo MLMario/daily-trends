@@ -43,6 +43,9 @@ _tmp/
 # Pipeline run artifacts (per-run output trees)
 runs/
 
+# Model caches (faster-whisper weights downloaded via WhisperModel(download_root=...))
+models/
+
 # Claude local config — ignore everything except the project's own skills
 .claude/*
 !.claude/skills/

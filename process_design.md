@@ -135,8 +135,7 @@ daily-trends/
 │                                   Slice C investigation, reused by Slice B);
 │                                   no new secrets for Whisper (local-only step)
 ├── .gitignore                      ignores .env*, credentials/, runs/, _tmp/,
-│                                   models/ (added with Slice B.4), .venv/,
-│                                   __pycache__/, .pytest_cache/
+│                                   models/, .venv/, __pycache__/, .pytest_cache/
 ├── pyproject.toml                  Python project config (uv-managed). Slice A
 │                                   runtime: google-api-python-client,
 │                                   google-auth-oauthlib. Dev: pytest, yt-dlp,
@@ -182,7 +181,7 @@ daily-trends/
 │   ├── test_error_log.py
 │   └── test_gmail_sender.py        unit (MIME) + integration (draft mode)
 │
-├── models/                         (gitignored; created by Slice B.4)
+├── models/                         (gitignored; populated by Slice B.4)
 │   └── whisper/                    faster-whisper model cache. Set per-process
 │                                   via `download_root="models/whisper"` kwarg
 │                                   on `WhisperModel(...)` — leaves the global
