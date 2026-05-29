@@ -1,20 +1,26 @@
 """Union per-source raw fetches into a normalized corpus.json.
 
-Every source is read by the same per-source reader: a (path, source-tag) pair
-fed through one normalization routine. Adding IG/X/etc. later is one more entry
-in `_sources()` — no source-specific branching, no call-site changes.
+Every source is read by a reader callable that returns a list of corpus items
+already in the shared `{id, source, account_or_outlet, posted_at, text, url}`
+shape. News and vendor_blogs read a single JSON file each; later sources can
+walk a directory tree, compose text from multiple files, or drop records of
+their own (logging per-item warnings) — `run()` stays source-agnostic and
+applies only the shared word-count filter.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from scripts.lib.error_log import ErrorLog
 from scripts.lib.run_workspace import RunWorkspace
 
 MIN_WORDS = 30
+
+Reader = Callable[[], list[dict]]
 
 
 def _word_count(text: str) -> int:
@@ -47,19 +53,24 @@ class CorpusNormalizer:
         self._ws = workspace
         self._log = error_log
 
-    def _sources(self) -> list[tuple[Path, str]]:
+    def _sources(self) -> list[Reader]:
+        return [self._read_news, self._read_vendor_blogs]
+
+    def _read_news(self) -> list[dict]:
+        return [_to_corpus_item(r, "news") for r in _read_records(self._ws.news_articles)]
+
+    def _read_vendor_blogs(self) -> list[dict]:
         return [
-            (self._ws.news_articles, "news"),
-            (self._ws.vendor_blogs_posts, "vendor_blogs"),
+            _to_corpus_item(r, "vendor_blogs")
+            for r in _read_records(self._ws.vendor_blogs_posts)
         ]
 
     def run(self) -> list[dict]:
         items: list[dict] = []
         dropped = 0
 
-        for path, source in self._sources():
-            for record in _read_records(path):
-                item = _to_corpus_item(record, source)
+        for reader in self._sources():
+            for item in reader():
                 if _word_count(item["text"]) < MIN_WORDS:
                     dropped += 1
                     continue
