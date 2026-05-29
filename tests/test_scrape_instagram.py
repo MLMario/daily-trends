@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
@@ -198,3 +199,97 @@ def test_missing_bright_data_key_logs_error_and_returns(
     assert entry["step"] == "scrape_instagram"
     assert entry["severity"] == "error"
     assert "BRIGHT_DATA_KEY" in entry["message"]
+
+
+def test_builds_combined_body_one_entry_per_account_mm_dd_yyyy_no_post_type(
+    tmp_path: Path,
+) -> None:
+    # ADR-0002 locks the trigger body shape: one record per creator, MM-DD-YYYY
+    # date fields, num_of_posts pulled from config, NO post_type field (the
+    # reels dataset is reels-only by definition and rejects post_type).
+    # discover_by="url", include_errors=True, format="json" round out the
+    # call. Today is injected so the date string is deterministic.
+    workspace, runs_root, config_path, accounts_path = _setup_paths(
+        tmp_path,
+        accounts={"instagram": ["hellovidya", "anothercreator"], "x": []},
+        config={"instagram_lookback_days": 7, "instagram_num_of_posts": 3},
+    )
+    client = FakeClient(fetch_returns=[])  # empty fetch — no per-Reel work
+    runner = FakeRunner()
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=runner,
+        today=date(2026, 5, 28),
+    )
+
+    assert len(client.trigger_calls) == 1
+    [call] = client.trigger_calls
+    assert call["discover_by"] == "url"
+    assert call["format"] == "json"
+    assert call["include_errors"] is True
+
+    body = call["body"]
+    assert len(body) == 2
+    assert body[0] == {
+        "url": "https://www.instagram.com/hellovidya/",
+        "num_of_posts": 3,
+        "start_date": "05-21-2026",
+        "end_date": "05-28-2026",
+    }
+    assert body[1]["url"] == "https://www.instagram.com/anothercreator/"
+    for entry in body:
+        assert "post_type" not in entry
+
+
+def test_records_demuxed_by_user_posted_and_written_to_typed_meta_paths(
+    tmp_path: Path,
+) -> None:
+    # Fetch returns records spanning two accounts; each lands as
+    # `<post_id>.meta.json` under its `user_posted` subdir via the typed
+    # workspace accessor. Per-account `mkdir` is the writer's job (the
+    # workspace gives a path only — symmetric with news / vendor_blogs).
+    workspace, runs_root, config_path, accounts_path = _setup_paths(
+        tmp_path,
+        accounts={"instagram": ["hellovidya", "anothercreator"], "x": []},
+    )
+    records = [
+        {
+            "post_id": "post_a",
+            "url": "https://www.instagram.com/p/post_a/",
+            "user_posted": "hellovidya",
+            "description": "first reel",
+            "date_posted": "2026-05-27T07:58:56.000Z",
+            "video_url": "https://cdn/example/a.mp4",
+        },
+        {
+            "post_id": "post_b",
+            "url": "https://www.instagram.com/p/post_b/",
+            "user_posted": "anothercreator",
+            "description": "second reel",
+            "date_posted": "2026-05-26T08:00:00.000Z",
+            "video_url": "https://cdn/example/b.mp4",
+        },
+    ]
+    client = FakeClient(fetch_returns=records)
+    runner = FakeRunner()  # not asserted on in this commit
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=runner,
+    )
+
+    meta_a = workspace.instagram_meta("hellovidya", "post_a")
+    meta_b = workspace.instagram_meta("anothercreator", "post_b")
+    assert meta_a.is_file()
+    assert meta_b.is_file()
+    assert json.loads(meta_a.read_text(encoding="utf-8")) == records[0]
+    assert json.loads(meta_b.read_text(encoding="utf-8")) == records[1]

@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
@@ -35,6 +36,10 @@ ACCOUNTS = REPO_ROOT / "creators" / "accounts.json"
 RUNS_ROOT = REPO_ROOT / "runs"
 
 STEP = "scrape_instagram"
+
+# Locked by ADR-0002 — Bright Data's instagram_reels dataset id. Future X
+# reactivation passes a different id to the same BrightDataClient.
+INSTAGRAM_REELS_DATASET_ID = "gd_lyclm20il4r5helnj"
 
 
 class _Client(Protocol):
@@ -65,12 +70,16 @@ def scrape_instagram(
     client: _Client | None = None,
     runner: Runner | None = None,
     log: ErrorLog | None = None,
+    today: date | None = None,
 ) -> None:
     """Run the IG scrape step against an already-minted run.
 
     Empty `accounts["instagram"]` (or missing accounts file) short-circuits
     to a clean no-op. All other failures are logged to the run's
     `errors.log` and swallowed; the pipeline continues regardless.
+
+    `today` is injectable so the MM-DD-YYYY `start_date`/`end_date` pair
+    is deterministic under test.
     """
     workspace = RunWorkspace.existing_run(runs_root, run_id)
     log = log or ErrorLog(workspace.errors)
@@ -85,6 +94,54 @@ def scrape_instagram(
         except RuntimeError as exc:
             log.log(step=STEP, severity="error", message=str(exc))
             return
+
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    lookback = int(config.get("instagram_lookback_days", 7))
+    num_of_posts = int(config.get("instagram_num_of_posts", 5))
+    end = today or date.today()
+    start = end - timedelta(days=lookback)
+    body = _build_trigger_body(accounts, num_of_posts=num_of_posts, start=start, end=end)
+
+    snapshot_id = client.trigger(
+        INSTAGRAM_REELS_DATASET_ID,
+        body,
+        discover_by="url",
+        format="json",
+        include_errors=True,
+    )
+    client.poll(snapshot_id)
+    records = client.fetch(snapshot_id)
+
+    for record in records:
+        account = record.get("user_posted")
+        post_id = record.get("post_id")
+        if not account or not post_id:
+            continue
+        meta_path = workspace.instagram_meta(account, post_id)
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta_path.write_text(
+            json.dumps(record, ensure_ascii=False), encoding="utf-8"
+        )
+
+
+def _build_trigger_body(
+    accounts: list[str],
+    *,
+    num_of_posts: int,
+    start: date,
+    end: date,
+) -> list[dict[str, Any]]:
+    start_str = start.strftime("%m-%d-%Y")
+    end_str = end.strftime("%m-%d-%Y")
+    return [
+        {
+            "url": f"https://www.instagram.com/{account}/",
+            "num_of_posts": num_of_posts,
+            "start_date": start_str,
+            "end_date": end_str,
+        }
+        for account in accounts
+    ]
 
 
 def _read_accounts(accounts_path: Path) -> list[str]:
