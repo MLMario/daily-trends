@@ -114,6 +114,48 @@ def test_no_mp4_files_is_a_clean_no_op(tmp_path: Path) -> None:
     assert _read_log(workspace.errors) == []
 
 
+def test_per_reel_transcribe_exception_logs_warning_and_continues(
+    tmp_path: Path,
+) -> None:
+    # Per-Reel failure is `warning` step `transcribe_reels` with
+    # `item_id=<post_id>` (issue #29 error taxonomy row 2). The Reel that
+    # failed gets no transcript file at all — not even an empty `text` —
+    # so the normalizer drops it for missing-transcript rather than
+    # empty-transcript (cumulative deviation #2 from the handoff). The
+    # next Reel in the walk still gets transcribed; one failure doesn't
+    # abort the run.
+    workspace, runs_root = _setup_workspace(tmp_path)
+    account_dir = workspace.instagram_dir("hellovidya")
+    account_dir.mkdir(parents=True)
+    (account_dir / "pA.mp4").write_bytes(b"fake A")
+    (account_dir / "pB.mp4").write_bytes(b"fake B")
+
+    model = FakeModel(
+        transcribe_returns=[
+            RuntimeError("ffmpeg returned non-zero on pA"),
+            ([FakeSegment(text="ok B")], FakeInfo(language="en", duration=7.0)),
+        ],
+    )
+    transcribe_reels(
+        workspace.run_id,
+        runs_root=runs_root,
+        model_factory=lambda: model,
+    )
+
+    # The failed Reel has no transcript file (deviation #2).
+    assert not workspace.instagram_transcript("hellovidya", "pA").exists()
+    # The next Reel was still processed.
+    assert workspace.instagram_transcript("hellovidya", "pB").is_file()
+
+    entries = _read_log(workspace.errors)
+    warnings = [e for e in entries if e["severity"] == "warning"]
+    assert len(warnings) == 1
+    [w] = warnings
+    assert w["step"] == "transcribe_reels"
+    assert w["item_id"] == "pA"
+    assert "ffmpeg" in w["message"]
+
+
 def test_non_english_reel_runs_two_pass_writes_text_and_text_en(
     tmp_path: Path,
 ) -> None:

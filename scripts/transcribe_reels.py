@@ -121,11 +121,24 @@ def transcribe_reels(
         # transcribed Reels are skipped so GPU time isn't burned twice.
         if transcript_path.exists():
             continue
-        _transcribe_one(
-            model,
-            audio=mp4_path,
-            transcript_path=transcript_path,
-        )
+        try:
+            _transcribe_one(
+                model,
+                audio=mp4_path,
+                transcript_path=transcript_path,
+            )
+        except Exception as exc:  # noqa: BLE001 — per-Reel try/except per ADR-0003
+            # Deviation #2 from the handoff: don't write a half-baked
+            # transcript on failure. No file at all → the normalizer
+            # drops the Reel for missing-transcript, not empty-text.
+            if transcript_path.exists():
+                transcript_path.unlink()
+            log.log(
+                step=STEP,
+                severity="warning",
+                message=str(exc),
+                item_id=post_id,
+            )
 
 
 def _transcribe_one(
