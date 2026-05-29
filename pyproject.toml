@@ -7,6 +7,7 @@ dependencies = [
     "google-api-python-client>=2.196.0",
     "google-auth-oauthlib>=1.4.0",
     "requests>=2.32.0",
+    "yt-dlp>=2026.3.17",
 ]
 
 [dependency-groups]
@@ -16,7 +17,6 @@ dev = [
     "nvidia-cublas-cu12>=12.9.2.10",
     "nvidia-cudnn-cu12==9.*",
     "pytest>=8.3.0",
-    "yt-dlp>=2026.3.17",
 ]
 
 [tool.pytest.ini_options]
