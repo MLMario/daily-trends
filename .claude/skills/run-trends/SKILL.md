@@ -29,7 +29,7 @@ Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (
 
    Capture the printed `run_id` (single line on stdout). On non-zero exit, surface the stderr message and abort.
 
-2. **Fetch both sources concurrently.** Read `prompts/news_search_prompt.md` and `prompts/vendor_blogs_prompt.md`, and read `vendor_blogs` + `vendor_blogs_lookback_days` from `config.json`.
+2. **Fetch sources concurrently.** Read `prompts/news_search_prompt.md` and `prompts/vendor_blogs_prompt.md`, and read `vendor_blogs` + `vendor_blogs_lookback_days` from `config.json`. Also read `creators/accounts.json` — when `accounts.json[instagram]` is non-empty, this stage fans out **three** calls; when empty, **two** (today's Slice A shape exactly).
 
    - **News prompt:** append two lines — `Run ID: <run_id>` and `Output path: runs/<run_id>/news/articles.json`.
    - **Vendor-blogs prompt:** append the configured blogs and lookback window as plain prose, then the run lines. For example:
@@ -43,7 +43,15 @@ Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (
      Output path: runs/<run_id>/vendor_blogs/posts.json
      ```
 
-   Issue **both** Agent calls in a **single tool block** so they run in parallel. Both use `subagent_type=general-purpose`, `model=sonnet`, fresh context, WebFetch available.
+   - **Instagram (conditional — only when `accounts.json[instagram]` is non-empty):** issue one Bash call alongside the two subagent calls:
+
+     ```
+     uv run python -m scripts.scrape_instagram <run_id>
+     ```
+
+     The script reads `creators/accounts.json[instagram]` + `config.instagram_lookback_days` + `config.instagram_num_of_posts` itself, fires one combined Bright Data snapshot, demultiplexes per creator, and shells out to yt-dlp for each `.mp4`. Per-Reel failures land in `errors.log` under `step=scrape_instagram`; the helper exits 0 on partial failure. `init_run` already created `runs/<run_id>/instagram/` because `enable_instagram` was derived from the same `accounts.json`, so the script writes into an existing tree.
+
+   Issue **all** calls (two subagent calls plus the optional Bash) in a **single tool block** so they run in parallel. The two subagent calls use `subagent_type=general-purpose`, `model=sonnet`, fresh context, WebFetch available.
 
 3. **Record source-fetch outcomes (non-fatal).** After both subagents return, inspect each output file. Attribute each event to its **source-specific step** — `news` for the news subagent, `vendor_blogs` for the vendor-blogs subagent — so the email's Errors & Skips section pins a failure to the source that caused it. None of these abort the run:
 
