@@ -90,3 +90,12 @@ def transcribe_reels(
     mp4_paths = sorted((workspace.path / "instagram").glob("*/*.mp4"))
     if not mp4_paths:
         return
+
+    if model_factory is None:  # pragma: no cover — production wires the real one
+        raise RuntimeError("transcribe_reels requires a model_factory")
+
+    try:
+        model_factory()
+    except Exception as exc:  # noqa: BLE001 — taxonomy maps any load failure to one event
+        log.log(step=STEP, severity="error", message=str(exc))
+        return

@@ -114,6 +114,38 @@ def test_no_mp4_files_is_a_clean_no_op(tmp_path: Path) -> None:
     assert _read_log(workspace.errors) == []
 
 
+def test_model_factory_raising_logs_error_and_returns_cleanly(
+    tmp_path: Path,
+) -> None:
+    # Per the issue #29 error taxonomy: "Whisper model load fails" →
+    # severity=error, step=transcribe_reels, exit 0. In the helper
+    # that translates to: catch the factory exception, log one error
+    # entry, return. Don't bubble out — the pipeline continues; the
+    # IG Reels all drop at normalize since no transcripts will exist.
+    workspace, runs_root = _setup_workspace(tmp_path)
+    account_dir = workspace.instagram_dir("hellovidya")
+    account_dir.mkdir(parents=True)
+    (account_dir / "p1.mp4").write_bytes(b"fake mp4")
+
+    def boom() -> Any:
+        raise RuntimeError("cuBLAS DLL load failed")
+
+    transcribe_reels(
+        workspace.run_id,
+        runs_root=runs_root,
+        model_factory=boom,
+    )
+
+    entries = _read_log(workspace.errors)
+    assert len(entries) == 1
+    [entry] = entries
+    assert entry["step"] == "transcribe_reels"
+    assert entry["severity"] == "error"
+    assert "cuBLAS DLL load failed" in entry["message"]
+    # No transcript should have landed for the Reel either.
+    assert not workspace.instagram_transcript("hellovidya", "p1").exists()
+
+
 def test_dll_path_prep_on_win32_prepends_nvidia_bin_dirs_and_returns_them(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
