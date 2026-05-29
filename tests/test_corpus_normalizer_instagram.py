@@ -271,3 +271,75 @@ def test_non_english_reel_with_caption_appends_caption_after_text_en(tmp_path: P
     corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
     assert len(corpus) == 1
     assert corpus[0]["text"] == f"{english}\n\n[Caption: Una reflexión sobre IA]"
+
+
+def test_short_ig_text_after_composition_drops_via_shared_word_filter(tmp_path: Path) -> None:
+    # The 30-word filter applies post-composition; an IG Reel with a 10-word
+    # transcript and a 5-word caption still falls below the threshold and
+    # drops. The drop lands in the consequential `dropped N` info summary —
+    # not in a per-item warning (that's reserved for transcript-absent).
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    write_ig_reel(
+        ws,
+        "hellovidya",
+        post_id="3920000000000000001_51994227",
+        shortcode="DYshorttxt",
+        description="A brief hot take",
+        transcript={
+            "text": " ".join(["w"] * 10),
+            "language": "en",
+            "duration_sec": 12.0,
+        },
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    assert corpus == []
+    consequential = [
+        e for e in error_entries(ws)
+        if e.get("kind") == "consequential" and e["step"] == "normalize"
+    ]
+    assert len(consequential) == 1
+    assert "1" in consequential[0]["message"]
+    warnings = [e for e in error_entries(ws) if e["severity"] == "warning"]
+    assert warnings == []  # short text is not the transcript-absent path
+
+
+def test_short_ig_text_drop_combines_with_news_drops_in_summary(tmp_path: Path) -> None:
+    # IG short-text drops and news short-summary drops are tallied together —
+    # the email's `dropped N` count is a single number across all sources.
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    ws.news_articles.write_text(
+        json.dumps(
+            [
+                {
+                    "url": "https://example.com/short-news",
+                    "title": "Short",
+                    "source": "Hacker News",
+                    "published_at": "2026-05-26T10:00:00Z",
+                    "summary": "too short to keep",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    write_ig_reel(
+        ws,
+        "hellovidya",
+        post_id="3920000000000000002_51994227",
+        shortcode="DYshortixt",
+        description=None,
+        transcript={"text": "very short ig text", "language": "en", "duration_sec": 4.0},
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    consequential = [
+        e for e in error_entries(ws)
+        if e.get("kind") == "consequential" and e["step"] == "normalize"
+    ]
+    assert len(consequential) == 1
+    assert "2" in consequential[0]["message"]
