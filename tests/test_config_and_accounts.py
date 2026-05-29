@@ -24,3 +24,13 @@ def test_config_carries_instagram_lookback_and_post_count_defaults() -> None:
 
     assert config["instagram_lookback_days"] == 7
     assert config["instagram_num_of_posts"] == 5
+
+
+def test_accounts_seeds_hellovidya_and_preserves_empty_x_list() -> None:
+    # Initial creator list: one IG handle (@hellovidya). The `x` key is
+    # carried as an empty list to preserve the Slice C surface — the X
+    # source is deferred but the schema stays stable so its later wiring
+    # is purely additive.
+    accounts = json.loads(ACCOUNTS.read_text(encoding="utf-8"))
+
+    assert accounts == {"instagram": ["hellovidya"], "x": []}
