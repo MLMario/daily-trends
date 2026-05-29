@@ -356,7 +356,15 @@ Before trusting the automation, verify:
 - [ ] **Subagent output schema check.** After a successful run, validate `trending_topics.json` and `content_recommendations.json` parse and contain documented fields.
 - [ ] **Email mode promotion.** Once `"draft"` outputs look right after ~3-5 runs, flip `email_mode: "send"`. Verify next run delivers directly to inbox.
 
-**Future dry-runs (slice B):** Non-English Reel transcription + translation; bad Reel URL / revoked token; config-sensitivity for `instagram_lookback_days`. (Slice C / X dry-runs are deferred indefinitely — see `docs/adr/0001-x-scraper-provider.md`.)
+**Slice B (Instagram Reels) dry-runs — gate for B.5:**
+
+- [ ] **IG-enabled draft run.** `creators/accounts.json[instagram]=["hellovidya"]`, `email_mode: "draft"`. Run `/run-trends`. Expected: `runs/<id>/instagram/hellovidya/` populated with `.meta.json` + `.mp4` + `.transcript.json` per Reel; IG corpus items present in `corpus.json`; IG-flavored topics or `other_notable` entries in the draft email. (On a clean clone, `uv sync` must run first — the Whisper four-wheel runtime stack now lives in `[project].dependencies`.)
+- [ ] **IG opt-out.** Temporarily set `creators/accounts.json[instagram]=[]`. Re-run `/run-trends`. Expected: no `runs/<id>/instagram/` directory; behavior identical to today's Slice A (two-call concurrent fan-out, no transcribe phase). Restore the list after.
+- [ ] **Failure injection: revoked `BRIGHT_DATA_KEY`.** Temporarily blank the env var. Run `/run-trends` with IG enabled. Expected: `scrape_instagram` error surfaces in the email's Errors & Skips section; news + vendor_blogs digest still ships. Restore after.
+- [ ] **Failure injection: fake GPU outage.** Temporarily rename a cuDNN DLL under `<venv>/Lib/site-packages/nvidia/cudnn/bin/`. Run `/run-trends` with IG enabled. Expected: `transcribe_reels` model-load `error` lands in `errors.log` and the email's Errors & Skips section; news + vendor_blogs digest still ships; rename the DLL back after.
+- [ ] **Non-English Reel.** Synthetic Spanish/Portuguese fixture or wait for organic creator-list growth. Expected: transcript JSON carries `text` (native) + `text_en` (translation); normalizer uses `text_en` in the corpus. Deferrable until first organic non-English Reel — mark deferred in sign-off if synthetic fixture not worth assembling.
+
+(Slice C / X dry-runs are deferred indefinitely — see `docs/adr/0001-x-scraper-provider.md`.)
 
 **Explicitly out of scope for the dry-run:** subagent output quality grading (judged by reading, iterated via prompt edits); scheduling cadence + how to trigger.
 
