@@ -22,6 +22,7 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = "-m 'not live'"
 markers = [
     "live: hits a real external API (Bright Data, etc.) — operator-gated merge check; not collected by default `pytest`",
 ]
