@@ -11,13 +11,13 @@ Orchestrate the pipeline: pre-flight → news + vendor-blogs subagents (parallel
 
 Append one pure-info entry recording the stage boundary at the start of each numbered step below — except `init_run`, whose marker lands immediately *after* step 1 creates the run dir (you cannot write to `errors.log` before the dir exists). The `ErrorLog` schema auto-stamps each line with a UTC `timestamp`, so wall-clock spend per stage becomes inspectable in `errors.log` later. These are **pure info** (no `kind`), so they never appear in the email's Errors & Skips section — they exist only for after-the-fact analysis.
 
-Use these step tokens, one marker per stage: `init_run`, `source-fetch`, `normalize`, `slow-day`, `cluster`, `recommend`, `render`. (The fetch stage runs two sources in parallel, so its *failures* are attributed per-source under `news` / `vendor_blogs` in step 3 — but the single timing marker for the whole stage uses `source-fetch`.) For example, before fetching:
+Use these step tokens, one marker per stage: `init_run`, `source-fetch`, `transcribe`, `normalize`, `slow-day`, `cluster`, `recommend`, `render`. (The fetch stage runs two sources in parallel — three when IG is enabled — so its *failures* are attributed per-source under `news` / `vendor_blogs` / `scrape_instagram` in step 3, but the single timing marker for the whole stage uses `source-fetch`. The `transcribe` marker fires at the start of Phase 2 when IG is enabled; per-Reel Whisper failures attribute under `transcribe_reels` inside the script itself.) For example, before fetching:
 
 ```
 uv run python -c "from pathlib import Path; from scripts.lib.error_log import ErrorLog; ErrorLog(Path('runs/<run_id>/errors.log')).log(step='source-fetch', severity='info', message='stage start: source-fetch')"
 ```
 
-Skip the marker for any stage the slow-day gate skips (cluster, recommend).
+Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (Phase 2 doesn't run). Skip the marker for any stage the slow-day gate skips (cluster, recommend).
 
 ## Steps
 
