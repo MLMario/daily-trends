@@ -24,6 +24,8 @@ constants, runs the Windows DLL prep, and builds the real
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -31,6 +33,29 @@ from scripts.lib.error_log import ErrorLog
 from scripts.lib.run_workspace import RunWorkspace
 
 STEP = "transcribe_reels"
+
+
+def _prepend_nvidia_dll_dirs() -> list[str]:
+    """On Windows, prep CTranslate2's DLL search path before importing
+    `faster_whisper`.
+
+    `os.add_dll_directory()` alone is insufficient for CT2's transitive
+    DLL loads on Windows — the wheel-installed
+    `<venv>/Lib/site-packages/nvidia/{cublas,cudnn,cuda_nvrtc}/bin/`
+    directories must also be on `PATH`. Pattern verified in the Slice B
+    feasibility smoke (`_tmp/slice-b-whisper-feasibility/smoke_test.py`)
+    and codified in ADR-0003.
+
+    On non-Windows platforms this is a deliberate no-op — the helper
+    returns `[]` and leaves `PATH` untouched, so the module imports
+    cleanly on Linux/macOS even though the production runtime is
+    Windows-only.
+
+    Returns the list of bin directories prepended, for logging.
+    """
+    if sys.platform != "win32":
+        return []
+    return []
 
 
 def transcribe_reels(

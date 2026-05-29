@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 
 from scripts.lib.run_workspace import RunWorkspace
-from scripts.transcribe_reels import transcribe_reels
+from scripts.transcribe_reels import _prepend_nvidia_dll_dirs, transcribe_reels
 
 
 # --- test doubles -----------------------------------------------------------
@@ -112,3 +112,23 @@ def test_no_mp4_files_is_a_clean_no_op(tmp_path: Path) -> None:
     )
 
     assert _read_log(workspace.errors) == []
+
+
+def test_dll_path_prep_is_a_no_op_on_non_win32(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ADR-0003 codifies the Windows-specific PATH prepend + add_dll_directory
+    # dance. On non-Windows platforms the helper must no-op cleanly — it
+    # neither touches PATH nor raises — so that the same module imports
+    # successfully on Linux CI (where the four nvidia/* wheels still exist
+    # but CT2 does its own thing).
+    monkeypatch.setattr("scripts.transcribe_reels.sys.platform", "linux")
+    original_path = "/usr/bin:/usr/local/bin"
+    monkeypatch.setenv("PATH", original_path)
+
+    added = _prepend_nvidia_dll_dirs()
+
+    assert added == []
+    import os
+
+    assert os.environ["PATH"] == original_path
