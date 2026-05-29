@@ -106,7 +106,7 @@ Slice A rows are marked **[A]**; slice B with **[B]**; slice C with **[C]**.
 
 | Step | Inputs (Materials) | Outputs (Materials) | Capabilities (Tools) | Awareness Check |
 |------|--------------------|---------------------|----------------------|-----------------|
-| **[B]** 1. Scrape IG Reels | `config.json` (instagram_lookback_days), `creators/accounts.json[instagram]` | Per Reel: `<post_id>.mp4` + `<post_id>.meta.json` | Python + Bright Data Web Scraper API (`gd_lyclm20il4r5helnj`, `discover_by=url`) + `yt-dlp` | yt-dlp returned URL; log+skip on fail. The reels-only dataset rejects a `post_type` field — omit it. Empty account = info log. See `docs/adr/0002-instagram-scraper-provider.md`. |
+| **[B]** 1. Scrape IG Reels | `config.json` (instagram_lookback_days), `creators/accounts.json[instagram]` | Per Reel: `<post_id>.mp4` + `<post_id>.meta.json` | Python + Bright Data Web Scraper API (`gd_lyclm20il4r5helnj`, `discover_by=url`) + `yt-dlp` | yt-dlp returned URL; log+skip on fail. Empty account = info log. See `docs/adr/0002-instagram-scraper-provider.md`. |
 | **[B]** 2. Transcribe Reels | `<post_id>.mp4` from step 1 | Per Reel: `<post_id>.transcript.json` (`{text, text_en?, language, duration_sec}`) | Python + `faster-whisper` (small, float16 on GPU); PyAV-bundled ffmpeg | Auto-detect language; non-English also gets `task="translate"` (two-pass). try/except each call -> errors.log + skip. Hard-fail on silent CPU fallback. Windows: prepend `nvidia/{cublas,cudnn,cuda_nvrtc}/bin/` to PATH before import. See `docs/adr/0003-whisper-local-runtime.md`. |
 | **[C]** 3. Scrape X posts | `config.json` (x_lookback_days), `creators/accounts.json[x]` | `x/<account>.json` containing `[{post_id, account, posted_at, text, url}]` | Python + Bright Data X Posts Dataset API | **Deferred indefinitely (2026-05-28)** — three-provider investigation hit X's logged-out content gate. See `docs/adr/0001-x-scraper-provider.md`. |
 | **[A]** 4a. News-search subagent | `prompts/news_search_prompt.md` (static) | `news/articles.json` — `[{url, title, source, published_at, summary}]` | Agent tool (general-purpose, Sonnet) + WebFetch | Fetch `news.ycombinator.com/` and `techcrunch.com/category/artificial-intelligence/`. Apply AI-relevance judgment per item. No date config — "what's there now" is the window. |
@@ -356,7 +356,15 @@ Before trusting the automation, verify:
 - [ ] **Subagent output schema check.** After a successful run, validate `trending_topics.json` and `content_recommendations.json` parse and contain documented fields.
 - [ ] **Email mode promotion.** Once `"draft"` outputs look right after ~3-5 runs, flip `email_mode: "send"`. Verify next run delivers directly to inbox.
 
-**Future dry-runs (slice B):** Non-English Reel transcription + translation; bad Reel URL / revoked token; config-sensitivity for `instagram_lookback_days`. (Slice C / X dry-runs are deferred indefinitely — see `docs/adr/0001-x-scraper-provider.md`.)
+**Slice B (Instagram Reels) dry-runs — gate for B.5:**
+
+- [ ] **IG-enabled draft run.** `creators/accounts.json[instagram]=["hellovidya"]`, `email_mode: "draft"`. Run `/run-trends`. Expected: `runs/<id>/instagram/hellovidya/` populated with `.meta.json` + `.mp4` + `.transcript.json` per Reel; IG corpus items present in `corpus.json`; IG-flavored topics or `other_notable` entries in the draft email. (On a clean clone, `uv sync` must run first — the Whisper four-wheel runtime stack now lives in `[project].dependencies`.)
+- [ ] **IG opt-out.** Temporarily set `creators/accounts.json[instagram]=[]`. Re-run `/run-trends`. Expected: no `runs/<id>/instagram/` directory; behavior identical to today's Slice A (two-call concurrent fan-out, no transcribe phase). Restore the list after.
+- [ ] **Failure injection: revoked `BRIGHT_DATA_KEY`.** Temporarily blank the env var. Run `/run-trends` with IG enabled. Expected: `scrape_instagram` error surfaces in the email's Errors & Skips section; news + vendor_blogs digest still ships. Restore after.
+- [ ] **Failure injection: fake GPU outage.** Temporarily rename a cuDNN DLL under `<venv>/Lib/site-packages/nvidia/cudnn/bin/`. Run `/run-trends` with IG enabled. Expected: `transcribe_reels` model-load `error` lands in `errors.log` and the email's Errors & Skips section; news + vendor_blogs digest still ships; rename the DLL back after.
+- [ ] **Non-English Reel.** Synthetic Spanish/Portuguese fixture or wait for organic creator-list growth. Expected: transcript JSON carries `text` (native) + `text_en` (translation); normalizer uses `text_en` in the corpus. Deferrable until first organic non-English Reel — mark deferred in sign-off if synthetic fixture not worth assembling.
+
+(Slice C / X dry-runs are deferred indefinitely — see `docs/adr/0001-x-scraper-provider.md`.)
 
 **Explicitly out of scope for the dry-run:** subagent output quality grading (judged by reading, iterated via prompt edits); scheduling cadence + how to trigger.
 
@@ -382,6 +390,14 @@ Before trusting the automation, verify:
 **Resolved by Slice B Whisper feasibility 2026-05-28:**
 
 - ~~Whisper hardware path.~~ → **GPU via `faster-whisper` `small` with `compute_type="float16"` on the operator's RTX 5070 Ti.** The originally locked `int8` quantization is broken on Blackwell sm_120 (CTranslate2 4.6.2 explicitly disabled INT8 there); `float16` runs at ~5.5 s warm-cache per ~3 min Reel and costs ~1.3 GB VRAM of 16 GB. Dev-deps already added (`faster-whisper>=1.2.1`, `ctranslate2>=4.6.3`, `nvidia-cublas-cu12`, `nvidia-cudnn-cu12==9.*`); they graduate to runtime when Slice B.4 lands `scripts/transcribe_reels.py`. Windows runtime constraint: prepend wheel-installed `nvidia/{cublas,cudnn,cuda_nvrtc}/bin/` to `PATH` before importing `faster_whisper`. See `docs/adr/0003-whisper-local-runtime.md`.
+
+**Resolved by Slice B build (B.1–B.5) 2026-05-28:**
+
+- ~~IG corpus reader.~~ → `CorpusNormalizer` reads `runs/<id>/instagram/<account>/*.transcript.json`, joins `text_en` (or `text`) with `[Caption: …]` suffix, drops Reels lacking transcripts. See PR #32 (Slice B.1).
+- ~~Workspace IG paths + config keys.~~ → `RunWorkspace` exposes `instagram_dir(account)` / `instagram_meta` / `instagram_mp4` / `instagram_transcript`; `config.instagram_lookback_days` (default 7) + `instagram_num_of_posts` added; `creators/accounts.json` seeded `{"instagram":["hellovidya"],"x":[]}`. See PR #33 (Slice B.2).
+- ~~IG scrape pathway.~~ → `BrightDataClient` + `scripts/scrape_instagram.py` (Bright Data discover-by-url + yt-dlp shellout, deferred dataset id `gd_lyclm20il4r5helnj`). See PR #34 (Slice B.3) and `docs/adr/0002-instagram-scraper-provider.md`.
+- ~~Whisper transcription script.~~ → `scripts/transcribe_reels.py` runs `faster-whisper small` at `float16` on CUDA, hard-fails on silent CPU fallback, per-Reel try/except with `step="transcribe_reels"` warning + skip. See PR #35 (Slice B.4) and `docs/adr/0003-whisper-local-runtime.md`.
+- ~~Orchestrator wiring.~~ → `/run-trends` Phase 1 fans out a third concurrent `scrape_instagram` call when `accounts.json[instagram]` is non-empty; Phase 2 runs `transcribe_reels` sequentially before normalize. Slice B.5 (this slice).
 
 **Still open:**
 
