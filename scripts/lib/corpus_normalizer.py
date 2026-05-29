@@ -54,7 +54,7 @@ class CorpusNormalizer:
         self._log = error_log
 
     def _sources(self) -> list[Reader]:
-        return [self._read_news, self._read_vendor_blogs]
+        return [self._read_news, self._read_vendor_blogs, self._read_instagram]
 
     def _read_news(self) -> list[dict]:
         return [_to_corpus_item(r, "news") for r in _read_records(self._ws.news_articles)]
@@ -64,6 +64,31 @@ class CorpusNormalizer:
             _to_corpus_item(r, "vendor_blogs")
             for r in _read_records(self._ws.vendor_blogs_posts)
         ]
+
+    def _read_instagram(self) -> list[dict]:
+        ig_root = self._ws.path / "instagram"
+        if not ig_root.is_dir():
+            return []
+        items: list[dict] = []
+        for account_dir in sorted(p for p in ig_root.iterdir() if p.is_dir()):
+            for meta_path in sorted(account_dir.glob("*.meta.json")):
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                transcript_path = meta_path.with_name(
+                    meta_path.name.replace(".meta.json", ".transcript.json")
+                )
+                transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
+                text = transcript["text"]
+                items.append(
+                    {
+                        "id": _stable_id(meta["url"]),
+                        "source": "instagram",
+                        "account_or_outlet": f"@{meta['user_posted']}",
+                        "posted_at": meta["date_posted"],
+                        "text": text,
+                        "url": meta["url"],
+                    }
+                )
+        return items
 
     def run(self) -> list[dict]:
         items: list[dict] = []
