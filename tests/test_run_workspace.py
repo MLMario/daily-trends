@@ -27,3 +27,28 @@ def test_lineage_path_sits_at_run_root(tmp_run_dir: Path) -> None:
     workspace = RunWorkspace.new_run(tmp_run_dir)
 
     assert workspace.lineage == workspace.path / "lineage.json"
+
+
+def test_new_run_without_instagram_flag_does_not_create_instagram_dir(
+    tmp_run_dir: Path,
+) -> None:
+    # Default conservative — pre-Slice-B callers (init_run today, recluster)
+    # construct workspaces without IG; the directory tree must not grow until
+    # the operator opts in via creators/accounts.json.
+    workspace = RunWorkspace.new_run(tmp_run_dir)
+
+    assert (workspace.path / "news").is_dir()
+    assert (workspace.path / "vendor_blogs").is_dir()
+    assert not (workspace.path / "instagram").exists()
+
+
+def test_new_run_with_enable_instagram_creates_instagram_dir(
+    tmp_run_dir: Path,
+) -> None:
+    # Opt-in via init_run when creators/accounts.json[instagram] is non-empty.
+    # The IG subtree exists at the run root, peer to news/ and vendor_blogs/.
+    workspace = RunWorkspace.new_run(tmp_run_dir, enable_instagram=True)
+
+    assert (workspace.path / "instagram").is_dir()
+    assert (workspace.path / "news").is_dir()
+    assert (workspace.path / "vendor_blogs").is_dir()

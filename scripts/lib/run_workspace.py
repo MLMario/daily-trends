@@ -50,7 +50,13 @@ class RunWorkspace:
     path: Path
 
     @classmethod
-    def new_run(cls, runs_root: Path, *, now: datetime | None = None) -> "RunWorkspace":
+    def new_run(
+        cls,
+        runs_root: Path,
+        *,
+        now: datetime | None = None,
+        enable_instagram: bool = False,
+    ) -> "RunWorkspace":
         run_id = _utc_minute_run_id(now)
         path = Path(runs_root) / run_id
         if path.exists():
@@ -59,6 +65,8 @@ class RunWorkspace:
             )
         (path / "news").mkdir(parents=True, exist_ok=False)
         (path / "vendor_blogs").mkdir(exist_ok=False)
+        if enable_instagram:
+            (path / "instagram").mkdir(exist_ok=False)
         return cls(run_id=run_id, path=path)
 
     @classmethod
