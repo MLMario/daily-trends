@@ -100,3 +100,54 @@ def test_transcript_only_reel_becomes_corpus_item(tmp_path: Path) -> None:
     assert item["url"] == "https://www.instagram.com/p/DYlaaQGqtZQ/"
     assert item["text"] == long_transcript()
     assert item["id"]
+
+
+def test_caption_appended_as_marker_when_description_non_empty(tmp_path: Path) -> None:
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    write_ig_reel(
+        ws,
+        "hellovidya",
+        post_id="3905022243161873792_51994227",
+        shortcode="DYxbQpbqZ2A",
+        description="Harvard is capping the number of A's to 20%.",
+        transcript={
+            "text": long_transcript(),
+            "language": "en",
+            "duration_sec": 154.0,
+        },
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    assert len(corpus) == 1
+    assert corpus[0]["text"] == (
+        long_transcript() + "\n\n[Caption: Harvard is capping the number of A's to 20%.]"
+    )
+
+
+def test_whitespace_only_description_does_not_append_caption_marker(tmp_path: Path) -> None:
+    # The composition rule keys off `description.strip()` being non-empty —
+    # a whitespace-only caption is the same as no caption.
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    write_ig_reel(
+        ws,
+        "hellovidya",
+        post_id="3905022243161873792_51994227",
+        shortcode="DYxbQpbqZ2A",
+        description="   \n\t  ",
+        transcript={
+            "text": long_transcript(),
+            "language": "en",
+            "duration_sec": 154.0,
+        },
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    assert len(corpus) == 1
+    assert corpus[0]["text"] == long_transcript()
+    assert "[Caption:" not in corpus[0]["text"]

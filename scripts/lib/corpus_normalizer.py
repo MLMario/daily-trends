@@ -78,6 +78,9 @@ class CorpusNormalizer:
                 )
                 transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
                 text = transcript["text"]
+                description = (meta.get("description") or "").strip()
+                if description:
+                    text = f"{text}\n\n[Caption: {description}]"
                 items.append(
                     {
                         "id": _stable_id(meta["url"]),
