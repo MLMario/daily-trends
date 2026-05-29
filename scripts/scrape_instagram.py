@@ -125,6 +125,7 @@ def scrape_instagram(
         return
 
     records = client.fetch(snapshot_id)
+    runner = runner or subprocess.run
 
     accounts_with_records: set[str] = set()
     for record in records:
@@ -139,6 +140,8 @@ def scrape_instagram(
         )
         accounts_with_records.add(account)
 
+        _download_reel(record, workspace=workspace, runner=runner, log=log)
+
     for account in accounts:
         if account not in accounts_with_records:
             # Quiet creator week — `info` not `consequential`, so the email's
@@ -149,6 +152,50 @@ def scrape_instagram(
                 severity="info",
                 message=f"no Reels for @{account} in lookback window",
             )
+
+
+def _download_reel(
+    record: dict[str, Any],
+    *,
+    workspace: RunWorkspace,
+    runner: Runner,
+    log: ErrorLog,
+) -> None:
+    """yt-dlp shellout with canonical-URL-then-CDN-URL fallback.
+
+    Two-attempt retry, no third attempt. Both fails → one `warning`
+    event with `item_id=<post_id>` under step `scrape_instagram`. The
+    `.meta.json` written earlier is left in place; normalize will drop
+    the Reel naturally at corpus time (no transcript will exist either,
+    since Whisper has no `.mp4` to transcribe).
+    """
+    account = record["user_posted"]
+    post_id = record["post_id"]
+    canonical = record.get("url")
+    cdn = record.get("video_url")
+    mp4 = workspace.instagram_mp4(account, post_id)
+
+    def _attempt(url: str) -> int:
+        cmd = [
+            "uv", "run", "yt-dlp",
+            "--no-playlist",
+            "--output", str(mp4),
+            url,
+        ]
+        result = runner(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+        return result.returncode
+
+    if canonical and _attempt(canonical) == 0:
+        return
+    if cdn and cdn != canonical and _attempt(cdn) == 0:
+        return
+
+    log.log(
+        step=STEP,
+        severity="warning",
+        message=f"yt-dlp failed on canonical and CDN URL for @{account}/{post_id}",
+        item_id=post_id,
+    )
 
 
 def _build_trigger_body(

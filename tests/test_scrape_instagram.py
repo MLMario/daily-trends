@@ -391,3 +391,100 @@ def test_empty_snapshot_per_account_logs_info_not_consequential(
     assert quiet.get("kind") != "consequential"
     # The active creator still got their record written.
     assert workspace.instagram_meta("hellovidya", "p1").is_file()
+
+
+def _one_record(account: str = "hellovidya", post_id: str = "p1") -> dict[str, Any]:
+    return {
+        "post_id": post_id,
+        "user_posted": account,
+        "url": f"https://www.instagram.com/p/{post_id}/",
+        "description": "x",
+        "date_posted": "2026-05-27T00:00:00.000Z",
+        "video_url": f"https://cdn/example/{post_id}.mp4",
+    }
+
+
+def test_yt_dlp_called_with_canonical_url_succeeds_no_warning(tmp_path: Path) -> None:
+    # Happy path: yt-dlp succeeds on the canonical instagram.com/p/<shortcode>
+    # URL. No retry, no warning, .meta.json on disk.
+    workspace, runs_root, config_path, accounts_path = _setup_paths(tmp_path)
+    record = _one_record()
+    client = FakeClient(fetch_returns=[record])
+    runner = FakeRunner(return_codes=[0])
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=runner,
+    )
+
+    assert len(runner.calls) == 1
+    [cmd] = runner.calls
+    # PRD #24 + handoff: `uv run yt-dlp --no-playlist <args> <url>` as a
+    # native argv list (no shell=True on Windows).
+    assert cmd[:4] == ["uv", "run", "yt-dlp", "--no-playlist"]
+    assert cmd[-1] == record["url"]
+    # The output path should point at the workspace's typed .mp4 location.
+    expected_mp4 = workspace.instagram_mp4("hellovidya", "p1")
+    assert str(expected_mp4) in cmd
+
+    # Only the per-account info row (none, since the creator got a record)
+    # plus zero warnings/errors. Empty log expected.
+    assert _read_log(workspace.errors) == []
+
+
+def test_yt_dlp_canonical_fails_cdn_succeeds_no_warning(tmp_path: Path) -> None:
+    # First call (canonical URL) fails → orchestrator retries with the
+    # record's `video_url` CDN URL → succeeds. No warning logged.
+    workspace, runs_root, config_path, accounts_path = _setup_paths(tmp_path)
+    record = _one_record()
+    client = FakeClient(fetch_returns=[record])
+    runner = FakeRunner(return_codes=[1, 0])
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=runner,
+    )
+
+    assert len(runner.calls) == 2
+    first, second = runner.calls
+    assert first[-1] == record["url"]
+    assert second[-1] == record["video_url"]
+    assert _read_log(workspace.errors) == []
+
+
+def test_yt_dlp_double_fail_logs_warning_meta_still_landed(tmp_path: Path) -> None:
+    # Both canonical and CDN URL fail. One `warning` event per Reel with
+    # `item_id=<post_id>` under step `scrape_instagram`. The .meta.json
+    # still lands — normalize will drop the Reel later (transcript will
+    # also be missing without an .mp4 for Whisper to chew on).
+    workspace, runs_root, config_path, accounts_path = _setup_paths(tmp_path)
+    record = _one_record()
+    client = FakeClient(fetch_returns=[record])
+    runner = FakeRunner(return_codes=[1, 1])
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=runner,
+    )
+
+    assert len(runner.calls) == 2
+    assert workspace.instagram_meta("hellovidya", "p1").is_file()
+
+    entries = _read_log(workspace.errors)
+    warnings = [e for e in entries if e["severity"] == "warning"]
+    assert len(warnings) == 1
+    [w] = warnings
+    assert w["step"] == "scrape_instagram"
+    assert w["item_id"] == "p1"
