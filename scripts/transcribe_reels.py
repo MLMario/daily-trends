@@ -55,7 +55,21 @@ def _prepend_nvidia_dll_dirs() -> list[str]:
     """
     if sys.platform != "win32":
         return []
-    return []
+    # sys.executable is `<venv>/Scripts/python.exe` on Windows venvs;
+    # `.parent.parent` resolves to the venv root.
+    venv = Path(sys.executable).parent.parent
+    site_pkgs = venv / "Lib" / "site-packages"
+    added: list[str] = []
+    for pkg in ("cublas", "cudnn", "cuda_nvrtc"):
+        bin_dir = site_pkgs / "nvidia" / pkg / "bin"
+        if bin_dir.is_dir():
+            os.add_dll_directory(str(bin_dir))
+            added.append(str(bin_dir))
+    if added:
+        os.environ["PATH"] = os.pathsep.join(
+            added + [os.environ.get("PATH", "")]
+        )
+    return added
 
 
 def transcribe_reels(

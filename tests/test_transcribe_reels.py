@@ -114,6 +114,58 @@ def test_no_mp4_files_is_a_clean_no_op(tmp_path: Path) -> None:
     assert _read_log(workspace.errors) == []
 
 
+def test_dll_path_prep_on_win32_prepends_nvidia_bin_dirs_and_returns_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ADR-0003: on Windows the helper must (a) call os.add_dll_directory
+    # for each nvidia/{cublas,cudnn,cuda_nvrtc}/bin and (b) prepend each
+    # to PATH — add_dll_directory alone doesn't reach CT2's transitive
+    # loads. The helper returns the prepended dirs (for logging).
+    #
+    # The test mints a synthetic venv layout under tmp_path mirroring
+    # `<venv>/Scripts/python.exe` and `<venv>/Lib/site-packages/nvidia/*/bin`,
+    # then patches sys.platform and sys.executable so the helper points
+    # at the synthetic tree instead of the real venv on the test runner.
+    import os
+
+    venv = tmp_path / ".venv"
+    site_pkgs = venv / "Lib" / "site-packages"
+    expected_dirs = []
+    for pkg in ("cublas", "cudnn", "cuda_nvrtc"):
+        bin_dir = site_pkgs / "nvidia" / pkg / "bin"
+        bin_dir.mkdir(parents=True)
+        expected_dirs.append(str(bin_dir))
+
+    fake_python = venv / "Scripts" / "python.exe"
+    fake_python.parent.mkdir(parents=True)
+    fake_python.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr("scripts.transcribe_reels.sys.platform", "win32")
+    monkeypatch.setattr("scripts.transcribe_reels.sys.executable", str(fake_python))
+
+    # Track add_dll_directory calls so we know the OS-level registration
+    # happened, not just the PATH prepend. os.add_dll_directory only
+    # exists on Windows in real CPython; on this test runner it may or
+    # may not — patch it unconditionally with a recording stub.
+    add_calls: list[str] = []
+    monkeypatch.setattr(
+        "scripts.transcribe_reels.os.add_dll_directory",
+        lambda p: add_calls.append(p) or None,
+        raising=False,
+    )
+
+    baseline = "C:\\Windows\\System32"
+    monkeypatch.setenv("PATH", baseline)
+
+    added = _prepend_nvidia_dll_dirs()
+
+    assert added == expected_dirs
+    assert add_calls == expected_dirs
+    # PATH is prefixed with the three bin dirs in order, followed by the
+    # original PATH (separated by os.pathsep).
+    assert os.environ["PATH"] == os.pathsep.join(expected_dirs + [baseline])
+
+
 def test_dll_path_prep_is_a_no_op_on_non_win32(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
