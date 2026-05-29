@@ -24,10 +24,11 @@ constants, runs the Windows DLL prep, and builds the real
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from scripts.lib.error_log import ErrorLog
 from scripts.lib.run_workspace import RunWorkspace
@@ -111,3 +112,38 @@ def transcribe_reels(
             message=f"expected device=cuda, got {device!r} — refusing silent CPU fallback",
         )
         return
+
+    for mp4_path in mp4_paths:
+        account = mp4_path.parent.name
+        post_id = mp4_path.stem
+        transcript_path = workspace.instagram_transcript(account, post_id)
+        _transcribe_one(
+            model,
+            audio=mp4_path,
+            transcript_path=transcript_path,
+        )
+
+
+def _transcribe_one(
+    model: Any,
+    *,
+    audio: Path,
+    transcript_path: Path,
+) -> None:
+    """Run two-pass Whisper on a single Reel and write the transcript.
+
+    Pass 1 (`task="transcribe"`) always runs and produces the native
+    transcript + detected language. Pass 2 (`task="translate"`) runs
+    only when `info.language != "en"` and produces the English
+    translation written under `text_en`.
+    """
+    segments, info = model.transcribe(str(audio), task="transcribe")
+    text = " ".join(s.text for s in segments).strip()
+    payload: dict[str, Any] = {
+        "text": text,
+        "language": info.language,
+        "duration_sec": round(info.duration, 3),
+    }
+    transcript_path.write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )

@@ -114,6 +114,50 @@ def test_no_mp4_files_is_a_clean_no_op(tmp_path: Path) -> None:
     assert _read_log(workspace.errors) == []
 
 
+def test_discovery_walks_instagram_tree_and_transcribes_each_reel(
+    tmp_path: Path,
+) -> None:
+    # Discovery walks runs/<run_id>/instagram/<account>/*.mp4 across all
+    # accounts. Each .mp4 produces one model.transcribe(...) call (English
+    # path — info.language == "en", so pass 2 is skipped) and one
+    # <post_id>.transcript.json next to it. Schema correctness is asserted
+    # downstream — this test pins the discovery walk and the per-Reel
+    # round-trip.
+    workspace, runs_root = _setup_workspace(tmp_path)
+
+    for account, post_id in [("hellovidya", "pA"), ("anothercreator", "pB")]:
+        d = workspace.instagram_dir(account)
+        d.mkdir(parents=True)
+        (d / f"{post_id}.mp4").write_bytes(b"fake mp4")
+
+    model = FakeModel(
+        transcribe_returns=[
+            ([FakeSegment(text="hello A")], FakeInfo(language="en", duration=10.0)),
+            ([FakeSegment(text="hello B")], FakeInfo(language="en", duration=20.0)),
+        ],
+    )
+
+    transcribe_reels(
+        workspace.run_id,
+        runs_root=runs_root,
+        model_factory=lambda: model,
+    )
+
+    # One transcribe call per .mp4 — sorted across accounts/post_ids.
+    audio_args = [c["audio"] for c in model.transcribe_calls]
+    assert workspace.instagram_mp4("anothercreator", "pB").as_posix() in [
+        Path(a).as_posix() for a in audio_args
+    ]
+    assert workspace.instagram_mp4("hellovidya", "pA").as_posix() in [
+        Path(a).as_posix() for a in audio_args
+    ]
+    assert len(model.transcribe_calls) == 2
+
+    # Transcript files land at the typed paths.
+    assert workspace.instagram_transcript("hellovidya", "pA").is_file()
+    assert workspace.instagram_transcript("anothercreator", "pB").is_file()
+
+
 def test_cpu_fallback_logs_error_and_skips_transcription(tmp_path: Path) -> None:
     # ADR-0003: silent CPU fallback masks the real failure (~6× slowdown
     # vs GPU on this hardware) — the helper inspects model.model.device
