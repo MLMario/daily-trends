@@ -71,10 +71,11 @@ class CorpusNormalizer:
             return []
         items: list[dict] = []
         for account_dir in sorted(p for p in ig_root.iterdir() if p.is_dir()):
+            account = account_dir.name
             for meta_path in sorted(account_dir.glob("*.meta.json")):
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
                 post_id = meta["post_id"]
-                transcript_path = account_dir / f"{post_id}.transcript.json"
+                transcript_path = self._ws.instagram_transcript(account, post_id)
                 transcript_text = ""
                 if transcript_path.exists():
                     transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
