@@ -117,6 +117,10 @@ def transcribe_reels(
         account = mp4_path.parent.name
         post_id = mp4_path.stem
         transcript_path = workspace.instagram_transcript(account, post_id)
+        # US #21: re-running on the same run_id is idempotent — already-
+        # transcribed Reels are skipped so GPU time isn't burned twice.
+        if transcript_path.exists():
+            continue
         _transcribe_one(
             model,
             audio=mp4_path,

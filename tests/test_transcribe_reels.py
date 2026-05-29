@@ -114,6 +114,42 @@ def test_no_mp4_files_is_a_clean_no_op(tmp_path: Path) -> None:
     assert _read_log(workspace.errors) == []
 
 
+def test_skip_if_transcript_already_exists(tmp_path: Path) -> None:
+    # US #21: re-running on the same run_id does not burn GPU time on
+    # Reels that already have a `.transcript.json` on disk. The helper
+    # skips them entirely — no model.transcribe(...) call, no overwrite.
+    # The Reel that doesn't have a transcript yet still gets transcribed.
+    workspace, runs_root = _setup_workspace(tmp_path)
+    account_dir = workspace.instagram_dir("hellovidya")
+    account_dir.mkdir(parents=True)
+    (account_dir / "pA.mp4").write_bytes(b"fake mp4 A")
+    (account_dir / "pB.mp4").write_bytes(b"fake mp4 B")
+
+    # pA's transcript already exists from a prior run.
+    existing = {"text": "cached", "language": "en", "duration_sec": 5.0}
+    workspace.instagram_transcript("hellovidya", "pA").write_text(
+        json.dumps(existing), encoding="utf-8"
+    )
+
+    model = FakeModel(
+        transcribe_returns=[
+            ([FakeSegment(text="new B")], FakeInfo(language="en", duration=12.0)),
+        ],
+    )
+    transcribe_reels(
+        workspace.run_id,
+        runs_root=runs_root,
+        model_factory=lambda: model,
+    )
+
+    # Only pB went through Whisper. pA's existing transcript is untouched.
+    assert len(model.transcribe_calls) == 1
+    assert Path(model.transcribe_calls[0]["audio"]).name == "pB.mp4"
+    assert json.loads(
+        workspace.instagram_transcript("hellovidya", "pA").read_text(encoding="utf-8")
+    ) == existing
+
+
 def test_discovery_walks_instagram_tree_and_transcribes_each_reel(
     tmp_path: Path,
 ) -> None:
