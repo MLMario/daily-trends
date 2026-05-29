@@ -114,6 +114,54 @@ def test_no_mp4_files_is_a_clean_no_op(tmp_path: Path) -> None:
     assert _read_log(workspace.errors) == []
 
 
+def test_non_english_reel_runs_two_pass_writes_text_and_text_en(
+    tmp_path: Path,
+) -> None:
+    # ADR-0003 two-pass contract for a non-English Reel:
+    # pass 1 — task="transcribe" → native transcript + detected language
+    # pass 2 — task="translate", language=info.language → English text
+    # The output schema gains `text_en` alongside `text`. The corpus
+    # normalizer (B.1) prefers `text_en` for non-English Reels — locked
+    # by tests in test_corpus_normalizer.
+    workspace, runs_root = _setup_workspace(tmp_path)
+    account_dir = workspace.instagram_dir("hellovidya")
+    account_dir.mkdir(parents=True)
+    (account_dir / "pES.mp4").write_bytes(b"fake mp4")
+
+    model = FakeModel(
+        transcribe_returns=[
+            (
+                [FakeSegment(text="Hola "), FakeSegment(text="mundo.")],
+                FakeInfo(language="es", duration=18.0),
+            ),
+            (
+                [FakeSegment(text="Hello "), FakeSegment(text="world.")],
+                FakeInfo(language="es", duration=18.0),
+            ),
+        ],
+    )
+    transcribe_reels(
+        workspace.run_id,
+        runs_root=runs_root,
+        model_factory=lambda: model,
+    )
+
+    assert len(model.transcribe_calls) == 2
+    p1, p2 = model.transcribe_calls
+    assert p1["task"] == "transcribe"
+    assert p1["language"] is None
+    assert p2["task"] == "translate"
+    assert p2["language"] == "es"  # info.language from pass 1
+
+    payload = json.loads(
+        workspace.instagram_transcript("hellovidya", "pES").read_text(encoding="utf-8")
+    )
+    assert payload["text"] == "Hola  mundo."
+    assert payload["text_en"] == "Hello  world."
+    assert payload["language"] == "es"
+    assert payload["duration_sec"] == 18.0
+
+
 def test_english_reel_runs_single_pass_writes_no_text_en(tmp_path: Path) -> None:
     # ADR-0003 two-pass contract for an English Reel: ONE transcribe call
     # (`task="transcribe"`), output keys exactly `{text, language,

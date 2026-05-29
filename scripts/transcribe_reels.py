@@ -148,6 +148,14 @@ def _transcribe_one(
         "language": info.language,
         "duration_sec": round(info.duration, 3),
     }
+    if info.language != "en":
+        # Two-pass per ADR-0003: pass 2 = English translation. The
+        # corpus normalizer reads `text_en or text`, so this is what
+        # the clustering subagent sees for non-English Reels.
+        segments_en, _ = model.transcribe(
+            str(audio), task="translate", language=info.language
+        )
+        payload["text_en"] = " ".join(s.text for s in segments_en).strip()
     transcript_path.write_text(
         json.dumps(payload, ensure_ascii=False), encoding="utf-8"
     )
