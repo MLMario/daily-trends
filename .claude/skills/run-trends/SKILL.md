@@ -5,7 +5,7 @@ description: Run the daily-trends pipeline end-to-end against today's news and d
 
 # run-trends
 
-Orchestrate the pipeline: pre-flight → news + vendor-blogs subagents (parallel) → normalize → slow-day gate → cluster → recommend → render + dispatch the email. On a slow day (corpus below threshold), the gate skips clustering + recommendations and the email renders an alternate light-signal layout.
+Orchestrate the pipeline: pre-flight → news + vendor-blogs (+ Instagram, when enabled) source-fetch in parallel → transcribe Reels (when IG enabled) → normalize → slow-day gate → cluster → recommend → render + dispatch the email. On a slow day (corpus below threshold), the gate skips clustering + recommendations and the email renders an alternate light-signal layout.
 
 ## Stage-boundary timing
 
@@ -68,23 +68,31 @@ Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (
    uv run python -c "from pathlib import Path; from scripts.lib.error_log import ErrorLog; ErrorLog(Path('runs/<run_id>/errors.log')).log(step='vendor_blogs', severity='info', message='no posts in the lookback window')"
    ```
 
-4. **Normalize.** Bash:
+4. **Transcribe Reels (sequential, IG-only).** Skip this step entirely when `creators/accounts.json[instagram]` is empty. Otherwise, emit the `transcribe` stage-boundary marker and run:
+
+   ```
+   uv run python -m scripts.transcribe_reels <run_id>
+   ```
+
+   The script walks `runs/<run_id>/instagram/<account>/*.mp4` (produced by step 2's IG Bash call), runs `faster-whisper small` at `float16` on CUDA, and writes per-Reel `<post_id>.transcript.json` keyed to the ADR-0003 schema. Per-Reel Whisper failures log a `warning` under `step=transcribe_reels` and skip the Reel; a model-load failure logs `error` and the script exits 0 — the normalizer then drops Reels lacking transcripts and the rest of the pipeline ships. After it returns, optionally count `.transcript.json` files against `.mp4` files in each per-creator directory; the delta plus existing `errors.log` entries already reconcile the dropped Reels, so no additional outcome logging is required here.
+
+5. **Normalize.** Bash:
 
    ```
    uv run python -m scripts.normalize_corpus <run_id>
    ```
 
-5. **Slow-day gate.** Read `runs/<run_id>/corpus.json` and `min_corpus_for_clustering` from `config.json`. Compare the corpus length to the threshold:
+6. **Slow-day gate.** Read `runs/<run_id>/corpus.json` and `min_corpus_for_clustering` from `config.json`. Compare the corpus length to the threshold:
 
-   - **If `len(corpus) < min_corpus_for_clustering`:** the day is too quiet to manufacture topics. Write `runs/<run_id>/skipped_clustering.json` and **skip steps 6 and 7** — jump straight to step 8 (render + dispatch), which will take the light-signal path. Do **not** write `trending_topics.json` or `content_recommendations.json`.
+   - **If `len(corpus) < min_corpus_for_clustering`:** the day is too quiet to manufacture topics. Write `runs/<run_id>/skipped_clustering.json` and **skip steps 7 and 8** — jump straight to step 9 (render + dispatch), which will take the light-signal path. Do **not** write `trending_topics.json` or `content_recommendations.json`.
 
      ```
      uv run python -c "import json; from pathlib import Path; corpus=json.loads(Path('runs/<run_id>/corpus.json').read_text(encoding='utf-8')); Path('runs/<run_id>/skipped_clustering.json').write_text(json.dumps({'reason': 'corpus below clustering threshold', 'corpus_size': len(corpus)}), encoding='utf-8')"
      ```
 
-   - **Otherwise:** continue to step 6 as normal.
+   - **Otherwise:** continue to step 7 as normal.
 
-6. **Cluster.** Read `prompts/clustering_prompt.md` and the full contents of `runs/<run_id>/corpus.json`. Spawn **one** subagent (`subagent_type=general-purpose`, `model=sonnet`, fresh context). Its prompt is the clustering prompt, then the corpus JSON inlined verbatim, then two lines:
+7. **Cluster.** Read `prompts/clustering_prompt.md` and the full contents of `runs/<run_id>/corpus.json`. Spawn **one** subagent (`subagent_type=general-purpose`, `model=sonnet`, fresh context). Its prompt is the clustering prompt, then the corpus JSON inlined verbatim, then two lines:
 
    ```
    Run ID: <run_id>
@@ -97,7 +105,7 @@ Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (
    uv run python -c "from pathlib import Path; Path('runs/<run_id>/trending_topics.json').write_text('{\"topics\": [], \"other_notable\": []}', encoding='utf-8')"
    ```
 
-7. **Recommend.** Read `prompts/recommendations_prompt.md`, the full contents of `runs/<run_id>/trending_topics.json`, and `content_channels` from `config.json`. Spawn **one** subagent (same harness, fresh context). Its prompt is the recommendations prompt, then the trending-topics JSON inlined verbatim, then the channel list as plain prose and the run lines. For example:
+8. **Recommend.** Read `prompts/recommendations_prompt.md`, the full contents of `runs/<run_id>/trending_topics.json`, and `content_channels` from `config.json`. Spawn **one** subagent (same harness, fresh context). Its prompt is the recommendations prompt, then the trending-topics JSON inlined verbatim, then the channel list as plain prose and the run lines. For example:
 
    ```
    Channels to write for: substack, linkedin, instagram
@@ -113,13 +121,13 @@ Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (
 
    Clustering and recommendations are a strict dependency chain — run them sequentially, not in a single tool block.
 
-8. **Render + dispatch.** Bash:
+9. **Render + dispatch.** Bash:
 
    ```
    uv run python -m scripts.send_email <run_id>
    ```
 
-9. **Final console line.** Read `runs/<run_id>/corpus.json`, `runs/<run_id>/trending_topics.json`, `runs/<run_id>/content_recommendations.json`, and `runs/<run_id>/errors.log`. Print one line:
+10. **Final console line.** Read `runs/<run_id>/corpus.json`, `runs/<run_id>/trending_topics.json`, `runs/<run_id>/content_recommendations.json`, and `runs/<run_id>/errors.log`. Print one line:
 
    ```
    run_id=<run_id> items=<n> topics=<t> ideas=<i> errors=<m> email=<mode>:<id>
