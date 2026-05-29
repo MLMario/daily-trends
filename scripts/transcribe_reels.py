@@ -95,7 +95,19 @@ def transcribe_reels(
         raise RuntimeError("transcribe_reels requires a model_factory")
 
     try:
-        model_factory()
+        model = model_factory()
     except Exception as exc:  # noqa: BLE001 — taxonomy maps any load failure to one event
         log.log(step=STEP, severity="error", message=str(exc))
+        return
+
+    # ADR-0003 hard-fail: a silent CPU fallback (CUDA driver missing,
+    # cuBLAS misload, GPU OOM at construction) makes the daily pipeline
+    # ~6× slower without the operator ever finding out. Refuse to run.
+    device = str(getattr(getattr(model, "model", None), "device", "")).lower()
+    if device != "cuda":
+        log.log(
+            step=STEP,
+            severity="error",
+            message=f"expected device=cuda, got {device!r} — refusing silent CPU fallback",
+        )
         return

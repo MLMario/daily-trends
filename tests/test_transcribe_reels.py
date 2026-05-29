@@ -114,6 +114,35 @@ def test_no_mp4_files_is_a_clean_no_op(tmp_path: Path) -> None:
     assert _read_log(workspace.errors) == []
 
 
+def test_cpu_fallback_logs_error_and_skips_transcription(tmp_path: Path) -> None:
+    # ADR-0003: silent CPU fallback masks the real failure (~6× slowdown
+    # vs GPU on this hardware) — the helper inspects model.model.device
+    # right after construction and treats a non-cuda value as `error`
+    # step `transcribe_reels`. Process exits cleanly; no Reel is
+    # transcribed; no transcript file lands.
+    workspace, runs_root = _setup_workspace(tmp_path)
+    account_dir = workspace.instagram_dir("hellovidya")
+    account_dir.mkdir(parents=True)
+    (account_dir / "p1.mp4").write_bytes(b"fake mp4")
+
+    cpu_model = FakeModel(device="cpu")
+    transcribe_reels(
+        workspace.run_id,
+        runs_root=runs_root,
+        model_factory=lambda: cpu_model,
+    )
+
+    assert cpu_model.transcribe_calls == []
+    entries = _read_log(workspace.errors)
+    assert len(entries) == 1
+    [entry] = entries
+    assert entry["step"] == "transcribe_reels"
+    assert entry["severity"] == "error"
+    msg = entry["message"].lower()
+    assert "cuda" in msg or "cpu" in msg
+    assert not workspace.instagram_transcript("hellovidya", "p1").exists()
+
+
 def test_model_factory_raising_logs_error_and_returns_cleanly(
     tmp_path: Path,
 ) -> None:
