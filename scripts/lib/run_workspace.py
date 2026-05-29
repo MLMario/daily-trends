@@ -50,7 +50,13 @@ class RunWorkspace:
     path: Path
 
     @classmethod
-    def new_run(cls, runs_root: Path, *, now: datetime | None = None) -> "RunWorkspace":
+    def new_run(
+        cls,
+        runs_root: Path,
+        *,
+        now: datetime | None = None,
+        enable_instagram: bool = False,
+    ) -> "RunWorkspace":
         run_id = _utc_minute_run_id(now)
         path = Path(runs_root) / run_id
         if path.exists():
@@ -59,6 +65,8 @@ class RunWorkspace:
             )
         (path / "news").mkdir(parents=True, exist_ok=False)
         (path / "vendor_blogs").mkdir(exist_ok=False)
+        if enable_instagram:
+            (path / "instagram").mkdir(exist_ok=False)
         return cls(run_id=run_id, path=path)
 
     @classmethod
@@ -103,3 +111,24 @@ class RunWorkspace:
     @property
     def errors(self) -> Path:
         return self.path / "errors.log"
+
+    def instagram_dir(self, account: str) -> Path:
+        """Per-creator IG subdirectory under the run's instagram/ tree.
+
+        Path-only — no mkdir side effect. The B.3 scrape script creates the
+        directory when it actually has Reels to write; the normalize reader
+        treats a missing directory as "no Reels this run".
+        """
+        return self.path / "instagram" / account
+
+    def instagram_meta(self, account: str, post_id: str) -> Path:
+        """Per-Reel meta record from the Bright Data snapshot fetch."""
+        return self.instagram_dir(account) / f"{post_id}.meta.json"
+
+    def instagram_mp4(self, account: str, post_id: str) -> Path:
+        """Per-Reel video file pulled by yt-dlp from the snapshot's mp4 URL."""
+        return self.instagram_dir(account) / f"{post_id}.mp4"
+
+    def instagram_transcript(self, account: str, post_id: str) -> Path:
+        """Per-Reel Whisper transcript (ADR-0003 schema)."""
+        return self.instagram_dir(account) / f"{post_id}.transcript.json"
