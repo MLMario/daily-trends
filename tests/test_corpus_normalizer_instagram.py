@@ -343,3 +343,47 @@ def test_short_ig_text_drop_combines_with_news_drops_in_summary(tmp_path: Path) 
     ]
     assert len(consequential) == 1
     assert "2" in consequential[0]["message"]
+
+
+def test_reader_walks_multiple_account_directories(tmp_path: Path) -> None:
+    # Two creators in `runs/<id>/instagram/`: each contributes one Reel; both
+    # land in the corpus with the `@<handle>` prefix derived from the
+    # directory's `user_posted`, not from the directory name (kept symmetric
+    # in this fixture but tests would still pin user_posted being authoritative).
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    write_ig_reel(
+        ws,
+        "hellovidya",
+        post_id="3911111111111111111_51994227",
+        shortcode="DYaccountA",
+        description=None,
+        transcript={
+            "text": long_transcript(),
+            "language": "en",
+            "duration_sec": 60.0,
+        },
+    )
+    write_ig_reel(
+        ws,
+        "aiengineerguy",
+        post_id="3922222222222222222_98765432",
+        shortcode="DYaccountB",
+        description="Bench results worth a look",
+        transcript={
+            "text": long_transcript(),
+            "language": "en",
+            "duration_sec": 75.0,
+        },
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    handles = sorted(item["account_or_outlet"] for item in corpus if item["source"] == "instagram")
+    assert handles == ["@aiengineerguy", "@hellovidya"]
+    urls = {item["url"] for item in corpus}
+    assert urls == {
+        "https://www.instagram.com/p/DYaccountA/",
+        "https://www.instagram.com/p/DYaccountB/",
+    }
