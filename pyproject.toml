@@ -10,6 +10,7 @@ dependencies = [
     "google-auth-oauthlib>=1.4.0",
     "nvidia-cublas-cu12>=12.9.2.10",
     "nvidia-cudnn-cu12==9.*",
+    "python-dotenv>=1.0.0",
     "requests>=2.32.0",
     "yt-dlp>=2026.3.17",
 ]
