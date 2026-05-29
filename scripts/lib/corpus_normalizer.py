@@ -73,11 +73,23 @@ class CorpusNormalizer:
         for account_dir in sorted(p for p in ig_root.iterdir() if p.is_dir()):
             for meta_path in sorted(account_dir.glob("*.meta.json")):
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                post_id = meta["post_id"]
                 transcript_path = meta_path.with_name(
                     meta_path.name.replace(".meta.json", ".transcript.json")
                 )
-                transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
-                text = transcript["text"]
+                transcript_text = ""
+                if transcript_path.exists():
+                    transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
+                    transcript_text = transcript.get("text") or ""
+                if not transcript_text:
+                    self._log.log(
+                        step="normalize",
+                        severity="warning",
+                        message="skipped IG reel — no transcript",
+                        item_id=post_id,
+                    )
+                    continue
+                text = transcript_text
                 description = (meta.get("description") or "").strip()
                 if description:
                     text = f"{text}\n\n[Caption: {description}]"

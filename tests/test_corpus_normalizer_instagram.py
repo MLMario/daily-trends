@@ -23,6 +23,16 @@ from scripts.lib.error_log import ErrorLog
 from scripts.lib.run_workspace import RunWorkspace
 
 
+def error_entries(ws: RunWorkspace) -> list[dict]:
+    if not ws.errors.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in ws.errors.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+
+
 CORPUS_KEYS = {"id", "source", "account_or_outlet", "posted_at", "text", "url"}
 
 
@@ -151,3 +161,57 @@ def test_whitespace_only_description_does_not_append_caption_marker(tmp_path: Pa
     assert len(corpus) == 1
     assert corpus[0]["text"] == long_transcript()
     assert "[Caption:" not in corpus[0]["text"]
+
+
+def test_transcript_absent_drops_reel_and_logs_warning(tmp_path: Path) -> None:
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    write_ig_reel(
+        ws,
+        "hellovidya",
+        post_id="3901640805393815120_51994227",
+        shortcode="DYlaaQGqtZQ",
+        description="Some caption that on its own wouldn't be enough signal.",
+        transcript=None,
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    assert corpus == []
+
+    warnings = [
+        e for e in error_entries(ws)
+        if e["severity"] == "warning" and e["step"] == "normalize"
+    ]
+    assert len(warnings) == 1
+    assert warnings[0]["item_id"] == "3901640805393815120_51994227"
+    assert warnings[0]["message"] == "skipped IG reel — no transcript"
+
+
+def test_empty_transcript_text_drops_reel_with_same_warning(tmp_path: Path) -> None:
+    # Transcript file exists but its `text` field is empty — same outcome as
+    # missing-file: drop + warning. Whisper occasionally produces this on
+    # silent or unintelligible audio.
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    write_ig_reel(
+        ws,
+        "hellovidya",
+        post_id="3905022243161873792_51994227",
+        shortcode="DYxbQpbqZ2A",
+        description=None,
+        transcript={"text": "", "language": "en", "duration_sec": 5.0},
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    assert corpus == []
+    warnings = [
+        e for e in error_entries(ws)
+        if e["severity"] == "warning" and e["step"] == "normalize"
+    ]
+    assert len(warnings) == 1
+    assert warnings[0]["item_id"] == "3905022243161873792_51994227"
+    assert warnings[0]["message"] == "skipped IG reel — no transcript"
