@@ -53,11 +53,14 @@ Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (
 
    Issue **all** calls (two subagent calls plus the optional Bash) in a **single tool block** so they run in parallel. The two subagent calls use `subagent_type=general-purpose`, `model=sonnet`, fresh context, WebFetch available.
 
-3. **Record source-fetch outcomes (non-fatal).** After both subagents return, inspect each output file. Attribute each event to its **source-specific step** — `news` for the news subagent, `vendor_blogs` for the vendor-blogs subagent — so the email's Errors & Skips section pins a failure to the source that caused it. None of these abort the run:
+3. **Record source-fetch outcomes (non-fatal).** After all concurrent calls return, inspect each output. Attribute each event to its **source-specific step** — `news` for the news subagent, `vendor_blogs` for the vendor-blogs subagent, `scrape_instagram` for the IG Bash call — so the email's Errors & Skips section pins a failure to the source that caused it. None of these abort the run:
 
    - A subagent's output file is missing or unparseable → log a `warning` under that source's step (`news` or `vendor_blogs`) and continue.
    - `runs/<run_id>/vendor_blogs/posts.json` is an empty array → log an **`info`**-level note (step `vendor_blogs`) that no vendor-blog posts fell in the lookback window. This is normal, **not an error**.
-   - Each subagent also logs its own per-source fetch failures (e.g. a blog URL returning 404) under the same step token — see the subagent prompts. Those entries are already in `errors.log` by the time you inspect the outputs; do not duplicate them.
+   - When IG ran, walk `runs/<run_id>/instagram/<account>/` for each creator in `accounts.json[instagram]`:
+     - Per-creator directory missing → log a `warning` (step `scrape_instagram`) and continue.
+     - Directory present but contains no `.meta.json` files → log an **`info`**-level note (step `scrape_instagram`) that no Reels fell in the lookback window. Normal, **not an error**.
+   - Each subagent also logs its own per-source fetch failures (e.g. a blog URL returning 404) under the same step token, and `scrape_instagram` logs per-Reel Bright Data / yt-dlp failures itself — see the prompts and the script. Those entries are already in `errors.log` by the time you inspect the outputs; do not duplicate them.
 
    Append events with the `ErrorLog` helper so each line matches the JSON-lines schema, e.g.:
 
