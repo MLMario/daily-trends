@@ -80,7 +80,13 @@ class CorpusNormalizer:
                 transcript_text = ""
                 if transcript_path.exists():
                     transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
-                    transcript_text = transcript.get("text") or ""
+                    # Two-pass Whisper on non-English Reels: `text_en` is the
+                    # translated pass and is what the English-only clustering
+                    # subagent reads. `text` is the native-language original,
+                    # carried only as a fallback for English Reels.
+                    transcript_text = (
+                        transcript.get("text_en") or transcript.get("text") or ""
+                    )
                 if not transcript_text:
                     self._log.log(
                         step="normalize",

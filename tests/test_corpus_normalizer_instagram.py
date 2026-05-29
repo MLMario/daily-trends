@@ -215,3 +215,59 @@ def test_empty_transcript_text_drops_reel_with_same_warning(tmp_path: Path) -> N
     assert len(warnings) == 1
     assert warnings[0]["item_id"] == "3905022243161873792_51994227"
     assert warnings[0]["message"] == "skipped IG reel — no transcript"
+
+
+def test_non_english_reel_uses_text_en_for_corpus_text(tmp_path: Path) -> None:
+    # Two-pass Whisper output: `text` holds the native-language transcript
+    # and `text_en` holds the translated pass. The clustering subagent reads
+    # English only, so `text_en` is what the corpus carries.
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    spanish = "Hola amigos, hoy vamos a hablar de inteligencia artificial " * 4
+    english = "Hi friends, today we are going to talk about artificial intelligence " * 4
+    write_ig_reel(
+        ws,
+        "hellovidya",
+        post_id="3909999999999999999_51994227",
+        shortcode="DYesnonengl",
+        description=None,
+        transcript={
+            "text": spanish,
+            "text_en": english,
+            "language": "es",
+            "duration_sec": 90.0,
+        },
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    assert len(corpus) == 1
+    assert corpus[0]["text"] == english
+    assert "Hola" not in corpus[0]["text"]
+
+
+def test_non_english_reel_with_caption_appends_caption_after_text_en(tmp_path: Path) -> None:
+    # `text_en` is the primary; the caption suffix rule is unchanged.
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+    english = "Today we discuss the latest research in large language models. " * 5
+    write_ig_reel(
+        ws,
+        "hellovidya",
+        post_id="3910000000000000000_51994227",
+        shortcode="DYesnonengC",
+        description="Una reflexión sobre IA",
+        transcript={
+            "text": "Hoy hablamos de los últimos avances en modelos de lenguaje. " * 5,
+            "text_en": english,
+            "language": "es",
+            "duration_sec": 90.0,
+        },
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    assert len(corpus) == 1
+    assert corpus[0]["text"] == f"{english}\n\n[Caption: Una reflexión sobre IA]"
