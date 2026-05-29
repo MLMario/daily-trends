@@ -111,3 +111,24 @@ class RunWorkspace:
     @property
     def errors(self) -> Path:
         return self.path / "errors.log"
+
+    def instagram_dir(self, account: str) -> Path:
+        """Per-creator IG subdirectory under the run's instagram/ tree.
+
+        Path-only — no mkdir side effect. The B.3 scrape script creates the
+        directory when it actually has Reels to write; the normalize reader
+        treats a missing directory as "no Reels this run".
+        """
+        return self.path / "instagram" / account
+
+    def instagram_meta(self, account: str, post_id: str) -> Path:
+        """Per-Reel meta record from the Bright Data snapshot fetch."""
+        return self.instagram_dir(account) / f"{post_id}.meta.json"
+
+    def instagram_mp4(self, account: str, post_id: str) -> Path:
+        """Per-Reel video file pulled by yt-dlp from the snapshot's mp4 URL."""
+        return self.instagram_dir(account) / f"{post_id}.mp4"
+
+    def instagram_transcript(self, account: str, post_id: str) -> Path:
+        """Per-Reel Whisper transcript (ADR-0003 schema)."""
+        return self.instagram_dir(account) / f"{post_id}.transcript.json"

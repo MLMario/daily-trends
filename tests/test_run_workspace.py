@@ -52,3 +52,36 @@ def test_new_run_with_enable_instagram_creates_instagram_dir(
     assert (workspace.path / "instagram").is_dir()
     assert (workspace.path / "news").is_dir()
     assert (workspace.path / "vendor_blogs").is_dir()
+
+
+def test_instagram_dir_returns_per_account_path_without_mkdir(
+    tmp_run_dir: Path,
+) -> None:
+    # Typed accessor mirrors news_articles / vendor_blogs_posts: pure path,
+    # no side effects. The B.3 scrape script will mkdir the per-account
+    # subdir when it actually has Reels to write.
+    workspace = RunWorkspace.new_run(tmp_run_dir, enable_instagram=True)
+
+    account_path = workspace.instagram_dir("hellovidya")
+
+    assert account_path == workspace.path / "instagram" / "hellovidya"
+    assert not account_path.exists()  # path-only, caller mkdirs
+
+
+def test_instagram_per_reel_paths_compose_account_and_post_id(
+    tmp_run_dir: Path,
+) -> None:
+    # The B.3 scrape + B.4 transcribe writers address each Reel by
+    # (account, post_id). The three artifacts share a stem and split by
+    # suffix — matches the directory shape the B.1 IG reader already walks.
+    workspace = RunWorkspace.new_run(tmp_run_dir, enable_instagram=True)
+    account = "hellovidya"
+    post_id = "3901640805393815120_51994227"
+    account_dir = workspace.instagram_dir(account)
+
+    assert workspace.instagram_meta(account, post_id) == account_dir / f"{post_id}.meta.json"
+    assert workspace.instagram_mp4(account, post_id) == account_dir / f"{post_id}.mp4"
+    assert (
+        workspace.instagram_transcript(account, post_id)
+        == account_dir / f"{post_id}.transcript.json"
+    )
