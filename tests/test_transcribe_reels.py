@@ -1,0 +1,114 @@
+"""Behavior tests for scripts.transcribe_reels.transcribe_reels.
+
+The helper takes paths + an injectable `model_factory` so each scenario
+can vary the Whisper surface without importing `faster_whisper` (which
+would require CUDA + the four nvidia/* wheels on the test runner).
+Mirrors `scrape_instagram.scrape_instagram`'s testable-seam pattern.
+
+`WhisperModel` is mocked everywhere here — production-quality Whisper
+output is verified manually post-merge against `_tmp/slice-b-feasibility/`
+fixtures (issue #29 AC line "no automated assertion").
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from scripts.lib.run_workspace import RunWorkspace
+from scripts.transcribe_reels import transcribe_reels
+
+
+# --- test doubles -----------------------------------------------------------
+
+
+@dataclass
+class FakeSegment:
+    text: str
+
+
+@dataclass
+class FakeInfo:
+    language: str = "en"
+    duration: float = 0.0
+
+
+@dataclass
+class FakeModel:
+    """Stand-in for faster_whisper.WhisperModel.
+
+    Tests configure `device` (drives the CPU-fallback hard-fail branch),
+    `transcribe_returns` (a list of `(segments, info)` tuples consumed in
+    call order), and inspect `transcribe_calls` afterwards.
+    """
+
+    device: str = "cuda"
+    transcribe_returns: list[tuple[list[FakeSegment], FakeInfo]] = field(
+        default_factory=list
+    )
+    transcribe_calls: list[dict[str, Any]] = field(default_factory=list)
+
+    # Mirror the faster_whisper layout: `.model.device` is the real device.
+    @property
+    def model(self) -> "FakeModel":
+        return self
+
+    def transcribe(
+        self,
+        audio: str,
+        *,
+        task: str = "transcribe",
+        language: str | None = None,
+    ) -> tuple[list[FakeSegment], FakeInfo]:
+        self.transcribe_calls.append(
+            {"audio": audio, "task": task, "language": language}
+        )
+        idx = min(len(self.transcribe_calls) - 1, len(self.transcribe_returns) - 1)
+        if isinstance(self.transcribe_returns[idx], Exception):
+            raise self.transcribe_returns[idx]
+        return self.transcribe_returns[idx]
+
+
+# --- fixtures ---------------------------------------------------------------
+
+
+def _setup_workspace(tmp_path: Path) -> tuple[RunWorkspace, Path]:
+    """Mint a fresh workspace with the IG subtree. Returns (workspace, runs_root)."""
+    runs_root = tmp_path / "runs"
+    workspace = RunWorkspace.new_run(runs_root, enable_instagram=True)
+    return workspace, runs_root
+
+
+def _read_log(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+
+
+# --- tests ------------------------------------------------------------------
+
+
+def test_no_mp4_files_is_a_clean_no_op(tmp_path: Path) -> None:
+    # Empty IG tree (e.g. quiet creator week): the helper walks the tree,
+    # finds nothing, and exits without touching the model factory or
+    # writing any log entries.
+    workspace, runs_root = _setup_workspace(tmp_path)
+
+    def factory_must_not_be_called() -> Any:
+        raise AssertionError("model_factory should not be invoked with no .mp4 files")
+
+    transcribe_reels(
+        workspace.run_id,
+        runs_root=runs_root,
+        model_factory=factory_must_not_be_called,
+    )
+
+    assert _read_log(workspace.errors) == []
