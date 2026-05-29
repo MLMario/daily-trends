@@ -1,20 +1,26 @@
 """Union per-source raw fetches into a normalized corpus.json.
 
-Every source is read by the same per-source reader: a (path, source-tag) pair
-fed through one normalization routine. Adding IG/X/etc. later is one more entry
-in `_sources()` — no source-specific branching, no call-site changes.
+Every source is read by a reader callable that returns a list of corpus items
+already in the shared `{id, source, account_or_outlet, posted_at, text, url}`
+shape. News and vendor_blogs read a single JSON file each; later sources can
+walk a directory tree, compose text from multiple files, or drop records of
+their own (logging per-item warnings) — `run()` stays source-agnostic and
+applies only the shared word-count filter.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from scripts.lib.error_log import ErrorLog
 from scripts.lib.run_workspace import RunWorkspace
 
 MIN_WORDS = 30
+
+Reader = Callable[[], list[dict]]
 
 
 def _word_count(text: str) -> int:
@@ -47,19 +53,68 @@ class CorpusNormalizer:
         self._ws = workspace
         self._log = error_log
 
-    def _sources(self) -> list[tuple[Path, str]]:
+    def _sources(self) -> list[Reader]:
+        return [self._read_news, self._read_vendor_blogs, self._read_instagram]
+
+    def _read_news(self) -> list[dict]:
+        return [_to_corpus_item(r, "news") for r in _read_records(self._ws.news_articles)]
+
+    def _read_vendor_blogs(self) -> list[dict]:
         return [
-            (self._ws.news_articles, "news"),
-            (self._ws.vendor_blogs_posts, "vendor_blogs"),
+            _to_corpus_item(r, "vendor_blogs")
+            for r in _read_records(self._ws.vendor_blogs_posts)
         ]
+
+    def _read_instagram(self) -> list[dict]:
+        ig_root = self._ws.path / "instagram"
+        if not ig_root.is_dir():
+            return []
+        items: list[dict] = []
+        for account_dir in sorted(p for p in ig_root.iterdir() if p.is_dir()):
+            for meta_path in sorted(account_dir.glob("*.meta.json")):
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                post_id = meta["post_id"]
+                transcript_path = account_dir / f"{post_id}.transcript.json"
+                transcript_text = ""
+                if transcript_path.exists():
+                    transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
+                    # Two-pass Whisper on non-English Reels: `text_en` is the
+                    # translated pass and is what the English-only clustering
+                    # subagent reads. `text` is the native-language original,
+                    # carried only as a fallback for English Reels.
+                    transcript_text = (
+                        transcript.get("text_en") or transcript.get("text") or ""
+                    )
+                if not transcript_text:
+                    self._log.log(
+                        step="normalize",
+                        severity="warning",
+                        message="skipped IG reel — no transcript",
+                        item_id=post_id,
+                    )
+                    continue
+                text = transcript_text
+                description = (meta.get("description") or "").strip()
+                if description:
+                    text = f"{text}\n\n[Caption: {description}]"
+                items.append(
+                    {
+                        "id": _stable_id(meta["url"]),
+                        "source": "instagram",
+                        "account_or_outlet": f"@{meta['user_posted']}",
+                        "posted_at": meta["date_posted"],
+                        "text": text,
+                        "url": meta["url"],
+                    }
+                )
+        return items
 
     def run(self) -> list[dict]:
         items: list[dict] = []
         dropped = 0
 
-        for path, source in self._sources():
-            for record in _read_records(path):
-                item = _to_corpus_item(record, source)
+        for reader in self._sources():
+            for item in reader():
                 if _word_count(item["text"]) < MIN_WORDS:
                     dropped += 1
                     continue
