@@ -114,6 +114,42 @@ def test_no_mp4_files_is_a_clean_no_op(tmp_path: Path) -> None:
     assert _read_log(workspace.errors) == []
 
 
+def test_english_reel_runs_single_pass_writes_no_text_en(tmp_path: Path) -> None:
+    # ADR-0003 two-pass contract for an English Reel: ONE transcribe call
+    # (`task="transcribe"`), output keys exactly `{text, language,
+    # duration_sec}` — `text_en` is absent. Segment text is concatenated
+    # with a single space and stripped at the boundaries.
+    workspace, runs_root = _setup_workspace(tmp_path)
+    account_dir = workspace.instagram_dir("hellovidya")
+    account_dir.mkdir(parents=True)
+    (account_dir / "pA.mp4").write_bytes(b"fake mp4")
+
+    model = FakeModel(
+        transcribe_returns=[
+            (
+                [FakeSegment(text="Hello "), FakeSegment(text="world.")],
+                FakeInfo(language="en", duration=42.555),
+            ),
+        ],
+    )
+    transcribe_reels(
+        workspace.run_id,
+        runs_root=runs_root,
+        model_factory=lambda: model,
+    )
+
+    [call] = model.transcribe_calls
+    assert call["task"] == "transcribe"
+
+    payload = json.loads(
+        workspace.instagram_transcript("hellovidya", "pA").read_text(encoding="utf-8")
+    )
+    assert set(payload.keys()) == {"text", "language", "duration_sec"}
+    assert payload["text"] == "Hello  world."
+    assert payload["language"] == "en"
+    assert payload["duration_sec"] == 42.555
+
+
 def test_skip_if_transcript_already_exists(tmp_path: Path) -> None:
     # US #21: re-running on the same run_id does not burn GPU time on
     # Reels that already have a `.transcript.json` on disk. The helper
