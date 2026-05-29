@@ -109,9 +109,24 @@ def scrape_instagram(
         format="json",
         include_errors=True,
     )
-    client.poll(snapshot_id)
+
+    try:
+        status = client.poll(snapshot_id)
+    except TimeoutError as exc:
+        log.log(step=STEP, severity="error", message=str(exc))
+        return
+
+    if status != "ready":
+        log.log(
+            step=STEP,
+            severity="error",
+            message=f"snapshot {snapshot_id} status={status} — aborting IG step",
+        )
+        return
+
     records = client.fetch(snapshot_id)
 
+    accounts_with_records: set[str] = set()
     for record in records:
         account = record.get("user_posted")
         post_id = record.get("post_id")
@@ -122,6 +137,18 @@ def scrape_instagram(
         meta_path.write_text(
             json.dumps(record, ensure_ascii=False), encoding="utf-8"
         )
+        accounts_with_records.add(account)
+
+    for account in accounts:
+        if account not in accounts_with_records:
+            # Quiet creator week — `info` not `consequential`, so the email's
+            # Errors & Skips section stays clean. The raw log still carries
+            # the row for the operator if they go looking.
+            log.log(
+                step=STEP,
+                severity="info",
+                message=f"no Reels for @{account} in lookback window",
+            )
 
 
 def _build_trigger_body(

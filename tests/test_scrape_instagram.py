@@ -293,3 +293,101 @@ def test_records_demuxed_by_user_posted_and_written_to_typed_meta_paths(
     assert meta_b.is_file()
     assert json.loads(meta_a.read_text(encoding="utf-8")) == records[0]
     assert json.loads(meta_b.read_text(encoding="utf-8")) == records[1]
+
+
+def test_snapshot_failed_status_logs_error_and_skips_fetch(tmp_path: Path) -> None:
+    # Issue #28: snapshot status="failed" → error step scrape_instagram.
+    # Run continues (no exception bubbles); no records get written and
+    # `fetch` is not called — there's nothing to fetch.
+    workspace, runs_root, config_path, accounts_path = _setup_paths(tmp_path)
+    client = FakeClient(poll_returns="failed")
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=FakeRunner(),
+    )
+
+    assert client.fetch_calls == []
+    assert not (workspace.path / "instagram" / "hellovidya").exists()
+    entries = _read_log(workspace.errors)
+    assert len(entries) == 1
+    [entry] = entries
+    assert entry["step"] == "scrape_instagram"
+    assert entry["severity"] == "error"
+    assert "failed" in entry["message"]
+
+
+def test_snapshot_poll_timeout_logs_error_and_skips_fetch(tmp_path: Path) -> None:
+    # The BrightDataClient.poll raises TimeoutError when the 540s ceiling
+    # is exceeded. The orchestrator catches it and surfaces it as
+    # `error` step `scrape_instagram` — same severity as a hard failure,
+    # because in either case the IG step produced no Reels for this run.
+    workspace, runs_root, config_path, accounts_path = _setup_paths(tmp_path)
+    client = FakeClient(poll_returns=TimeoutError("snapshot xyz did not terminate within 540s"))
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=FakeRunner(),
+    )
+
+    assert client.fetch_calls == []
+    entries = _read_log(workspace.errors)
+    assert len(entries) == 1
+    [entry] = entries
+    assert entry["step"] == "scrape_instagram"
+    assert entry["severity"] == "error"
+    assert "540" in entry["message"] or "timeout" in entry["message"].lower()
+
+
+def test_empty_snapshot_per_account_logs_info_not_consequential(
+    tmp_path: Path,
+) -> None:
+    # Quiet creator week: snapshot succeeded but returned zero records
+    # for some account. Issue #28 + PRD #24 both say `info` (not
+    # consequential) — these don't show up in the email's Errors & Skips
+    # section, only in the raw log. One info event per account that got
+    # no records.
+    workspace, runs_root, config_path, accounts_path = _setup_paths(
+        tmp_path,
+        accounts={"instagram": ["hellovidya", "quietcreator"], "x": []},
+    )
+    records = [
+        {
+            "post_id": "p1",
+            "user_posted": "hellovidya",
+            "url": "https://www.instagram.com/p/p1/",
+            "description": "x",
+            "date_posted": "2026-05-27T00:00:00.000Z",
+            "video_url": "https://cdn/p1.mp4",
+        }
+    ]
+    client = FakeClient(fetch_returns=records)
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=FakeRunner(),
+    )
+
+    entries = _read_log(workspace.errors)
+    # Exactly one info row for the quiet creator.
+    info_rows = [e for e in entries if e["severity"] == "info"]
+    assert len(info_rows) == 1
+    quiet = info_rows[0]
+    assert quiet["step"] == "scrape_instagram"
+    assert "quietcreator" in quiet["message"]
+    # Must NOT be `kind: consequential` — that would surface in the email.
+    assert quiet.get("kind") != "consequential"
+    # The active creator still got their record written.
+    assert workspace.instagram_meta("hellovidya", "p1").is_file()
