@@ -387,3 +387,68 @@ def test_reader_walks_multiple_account_directories(tmp_path: Path) -> None:
         "https://www.instagram.com/p/DYaccountA/",
         "https://www.instagram.com/p/DYaccountB/",
     }
+
+
+def test_news_vendor_blogs_and_instagram_coexist_in_one_corpus(tmp_path: Path) -> None:
+    # End-to-end shape check: all three sources land together, each item
+    # conforms to the shared 6-key schema, and the per-source `source` tag
+    # disambiguates them without source-specific fields leaking.
+    ws = make_workspace(tmp_path)
+    log = ErrorLog(ws.errors)
+
+    ws.news_articles.write_text(
+        json.dumps(
+            [
+                {
+                    "url": "https://example.com/news-a",
+                    "title": "News A",
+                    "source": "Hacker News",
+                    "published_at": "2026-05-26T10:00:00Z",
+                    "summary": " ".join(["w"] * 40),
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    ws.vendor_blogs_posts.write_text(
+        json.dumps(
+            [
+                {
+                    "url": "https://claude.com/blog/p-1",
+                    "title": "Vendor Post",
+                    "source": "Anthropic",
+                    "published_at": "2026-05-25T09:00:00Z",
+                    "summary": " ".join(["w"] * 40),
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    write_ig_reel(
+        ws,
+        "hellovidya",
+        post_id="3933333333333333333_51994227",
+        shortcode="DYmixed001",
+        description="Quick AI roundup",
+        transcript={
+            "text": long_transcript(),
+            "language": "en",
+            "duration_sec": 90.0,
+        },
+    )
+
+    CorpusNormalizer(ws, log).run()
+
+    corpus = json.loads(ws.corpus.read_text(encoding="utf-8"))
+    by_source = {item["source"]: item for item in corpus}
+    assert set(by_source) == {"news", "vendor_blogs", "instagram"}
+    assert all(set(item) == CORPUS_KEYS for item in corpus)
+    assert by_source["news"]["account_or_outlet"] == "Hacker News"
+    assert by_source["vendor_blogs"]["account_or_outlet"] == "Anthropic"
+    assert by_source["instagram"]["account_or_outlet"] == "@hellovidya"
+    # Only the IG item carries the @-prefix; news/vendor outlets are bare labels.
+    assert not by_source["news"]["account_or_outlet"].startswith("@")
+    assert not by_source["vendor_blogs"]["account_or_outlet"].startswith("@")
+    # Idempotency: re-running on the same workspace yields byte-identical corpus.
+    CorpusNormalizer(ws, log).run()
+    assert json.loads(ws.corpus.read_text(encoding="utf-8")) == corpus
