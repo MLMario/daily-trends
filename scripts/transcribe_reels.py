@@ -33,6 +33,10 @@ from typing import Any, Callable
 from scripts.lib.error_log import ErrorLog
 from scripts.lib.run_workspace import RunWorkspace
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+RUNS_ROOT = REPO_ROOT / "runs"
+MODEL_CACHE = REPO_ROOT / "models" / "whisper"
+
 STEP = "transcribe_reels"
 
 
@@ -172,3 +176,52 @@ def _transcribe_one(
     transcript_path.write_text(
         json.dumps(payload, ensure_ascii=False), encoding="utf-8"
     )
+
+
+def _build_real_whisper_factory() -> Callable[[], object]:
+    """Production factory: deferred import of `faster_whisper` (must come
+    after `_prepend_nvidia_dll_dirs()` on Windows) + `WhisperModel`
+    constructor pinned to the ADR-0003 line.
+
+    Returned closure is the `model_factory` `transcribe_reels` invokes.
+    Any constructor failure (CUDA driver missing, model download fails,
+    etc.) bubbles up through the closure into the helper's load-failure
+    catch site.
+    """
+
+    def _factory() -> object:
+        from faster_whisper import WhisperModel  # noqa: PLC0415 — deferred per ADR-0003
+
+        return WhisperModel(
+            "small",
+            device="cuda",
+            compute_type="float16",
+            download_root=str(MODEL_CACHE),
+        )
+
+    return _factory
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) != 1:
+        print("usage: transcribe_reels.py <run_id>", file=sys.stderr)
+        return 2
+    run_id = args[0]
+
+    # MUST run before the factory closure imports faster_whisper. The
+    # helper itself is a no-op on non-Windows; on Windows it prepends
+    # nvidia/{cublas,cudnn,cuda_nvrtc}/bin to PATH and registers each
+    # via os.add_dll_directory so CT2's transitive DLL loads succeed.
+    _prepend_nvidia_dll_dirs()
+
+    transcribe_reels(
+        run_id,
+        runs_root=RUNS_ROOT,
+        model_factory=_build_real_whisper_factory(),
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
