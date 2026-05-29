@@ -391,6 +391,14 @@ Before trusting the automation, verify:
 
 - ~~Whisper hardware path.~~ → **GPU via `faster-whisper` `small` with `compute_type="float16"` on the operator's RTX 5070 Ti.** The originally locked `int8` quantization is broken on Blackwell sm_120 (CTranslate2 4.6.2 explicitly disabled INT8 there); `float16` runs at ~5.5 s warm-cache per ~3 min Reel and costs ~1.3 GB VRAM of 16 GB. Dev-deps already added (`faster-whisper>=1.2.1`, `ctranslate2>=4.6.3`, `nvidia-cublas-cu12`, `nvidia-cudnn-cu12==9.*`); they graduate to runtime when Slice B.4 lands `scripts/transcribe_reels.py`. Windows runtime constraint: prepend wheel-installed `nvidia/{cublas,cudnn,cuda_nvrtc}/bin/` to `PATH` before importing `faster_whisper`. See `docs/adr/0003-whisper-local-runtime.md`.
 
+**Resolved by Slice B build (B.1–B.5) 2026-05-28:**
+
+- ~~IG corpus reader.~~ → `CorpusNormalizer` reads `runs/<id>/instagram/<account>/*.transcript.json`, joins `text_en` (or `text`) with `[Caption: …]` suffix, drops Reels lacking transcripts. See PR #32 (Slice B.1).
+- ~~Workspace IG paths + config keys.~~ → `RunWorkspace` exposes `instagram_dir(account)` / `instagram_meta` / `instagram_mp4` / `instagram_transcript`; `config.instagram_lookback_days` (default 7) + `instagram_num_of_posts` added; `creators/accounts.json` seeded `{"instagram":["hellovidya"],"x":[]}`. See PR #33 (Slice B.2).
+- ~~IG scrape pathway.~~ → `BrightDataClient` + `scripts/scrape_instagram.py` (Bright Data discover-by-url + yt-dlp shellout, deferred dataset id `gd_lyclm20il4r5helnj`). See PR #34 (Slice B.3) and `docs/adr/0002-instagram-scraper-provider.md`.
+- ~~Whisper transcription script.~~ → `scripts/transcribe_reels.py` runs `faster-whisper small` at `float16` on CUDA, hard-fails on silent CPU fallback, per-Reel try/except with `step="transcribe_reels"` warning + skip. See PR #35 (Slice B.4) and `docs/adr/0003-whisper-local-runtime.md`.
+- ~~Orchestrator wiring.~~ → `/run-trends` Phase 1 fans out a third concurrent `scrape_instagram` call when `accounts.json[instagram]` is non-empty; Phase 2 runs `transcribe_reels` sequentially before normalize. Slice B.5 (this slice).
+
 **Still open:**
 
 - **Cadence + trigger mechanism.** Slice A is manual-trigger only. Pick daily vs. other cadence + Windows Task Scheduler vs. manual `claude` invocation after first stable run. Likely requires migration to headless Python orchestrator at that point.
