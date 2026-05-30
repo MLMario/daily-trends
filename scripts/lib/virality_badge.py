@@ -16,6 +16,7 @@ Bands (1-10 composite):
 from __future__ import annotations
 
 import html
+import math
 
 # The LinkedIn rubric (issue #39): a weighted composite over five dimensions,
 # each judged 1-10 from the Idea text + Topic context (no engagement metrics).
@@ -36,9 +37,14 @@ def composite_score(subscores: dict[str, int], rubric: dict[str, float]) -> int:
     `rubric` maps each dimension to its weight (weights sum to 1.0). Only the
     dimensions present in the rubric contribute, so a channel's rubric fully
     determines its composite.
+
+    Ties round half UP (4.5 -> 5), matching the rule the report prompt states
+    for this composite. Python's built-in ``round`` is round-half-to-even
+    (banker's rounding), which would send 4.5 -> 4 and flip the badge band, so
+    ``math.floor(total + 0.5)`` is used instead.
     """
     total = sum(subscores[dimension] * weight for dimension, weight in rubric.items())
-    return round(total)
+    return math.floor(total + 0.5)
 
 
 def band_for_score(score: int) -> str:

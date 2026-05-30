@@ -10,12 +10,16 @@ rendered markup live here once, tested, rather than duplicated per channel.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from scripts.lib.virality_badge import (
     LINKEDIN_RUBRIC,
     band_for_score,
     composite_score,
     render_badge,
 )
+
+_TEMPLATE = Path(__file__).resolve().parents[1] / "templates" / "report_template.html"
 
 
 def test_low_composite_is_the_red_band() -> None:
@@ -116,3 +120,40 @@ def test_composite_is_the_rounded_weighted_average_of_subscores() -> None:
 def test_composite_of_uniform_tens_is_ten() -> None:
     perfect = {dim: 10 for dim in LINKEDIN_RUBRIC}
     assert composite_score(perfect, LINKEDIN_RUBRIC) == 10
+
+
+def test_composite_rounds_half_up_at_a_tie() -> None:
+    # The prompt mandates "ties round half up" (report_prompt.md), and this
+    # helper is the canonical source of the composite math (ADR-0005). A .5 tie
+    # must round UP, not to-even — banker's rounding would flip the band.
+    #
+    # 6*.25 + 4*.25 + 4*.20 + 4*.20 + 4*.10 = 1.5 + 1.0 + 0.8 + 0.8 + 0.4 = 4.5
+    half_tie = {
+        "Hook Tension": 6,
+        "Opinion Sharpness": 4,
+        "Narrative Structure": 4,
+        "Niche Fit": 4,
+        "Saveability": 4,
+    }
+    # round-half-up: 4.5 -> 5, NOT 4 (round-half-to-even would give 4).
+    assert composite_score(half_tie, LINKEDIN_RUBRIC) == 5
+    # And the band flips with it: 4 is red, 5 is amber. The tie must land amber.
+    assert band_for_score(composite_score(half_tie, LINKEDIN_RUBRIC)) == "amber"
+
+
+def test_template_embeds_the_canonical_render_badge_markup() -> None:
+    # ADR-0005: the template carries a fill-in copy of the badge markup while
+    # render_badge is canonical. They must not drift — assert the template
+    # embeds the exact markup render_badge produces for the example badge.
+    canonical = render_badge(
+        composite=8,
+        subscores={
+            "Hook Tension": 9,
+            "Opinion Sharpness": 8,
+            "Narrative Structure": 7,
+            "Niche Fit": 8,
+            "Saveability": 6,
+        },
+        justification="Two-sentence justification of the score. Second sentence.",
+    )
+    assert canonical in _TEMPLATE.read_text(encoding="utf-8")
