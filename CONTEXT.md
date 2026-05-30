@@ -41,8 +41,12 @@ One per-Channel content suggestion for a Topic — the cell the Report leads wit
 _Avoid_: recommendation (reserved for the subagent/file), suggestion, post.
 
 **Virality score**:
-The per-row signal of how likely a Topic's Idea is to spread on a given Channel — the Report's third column. **Deferred:** in the scoreless slice every Virality cell reads the literal em dash `—`; scoring and scored re-sorting land in a later slice (parent #37). The column exists now as a placeholder so the layout is stable.
+The per-row signal of how likely a Topic's Idea is to spread on a given Channel — the Report's third column. A 1–10 composite the report subagent computes per **rubric** from the Idea text + Topic context only (no source-post engagement metrics), backed by five per-dimension sub-scores and a 2-sentence justification, rendered as a color-coded **Virality badge** (red ≤4, amber 5–7, green ≥8). Scoring is per-Channel and **rubric-keyed**: a Channel with a rubric is scored and its section sorts by composite descending; a Channel without one (e.g. `substack`) reads the literal em dash `—` and stays in Topic order. `linkedin` scoring shipped; `instagram` follows; the band/weight/badge math is the tested `scripts/lib/virality_badge.py`.
 _Avoid_: engagement, reach, popularity, score (qualify it — always "Virality score").
+
+**Rubric**:
+A Channel-specific, weighted set of 1–10 dimensions the report subagent scores an Idea against to produce its **Virality score**. The LinkedIn rubric is Hook Tension 25%, Opinion Sharpness 25%, Narrative Structure 20%, Niche Fit 20%, Saveability 10%; its 1→10 anchor descriptions live in `prompts/report_prompt.md`, its weights + composite/band math in `scripts/lib/virality_badge.py`. A Channel either has a rubric (scored) or does not (scoreless `—`) — the rubric's *presence* is what keys that split, never a channel name.
+_Avoid_: criteria, scorecard, formula.
 
 **Sources**:
 A Topic's resolved corpus members rendered as links in the Report's **Resources** column (and the Digest's member list): each `member_id` resolved against `corpus.json` to its corpus item, rendered as **Outlet → url**. Ids absent from the corpus are skipped silently, identically in the Report and the Digest.
