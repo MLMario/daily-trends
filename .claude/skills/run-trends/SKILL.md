@@ -5,19 +5,19 @@ description: Run the daily-trends pipeline end-to-end against today's news and d
 
 # run-trends
 
-Orchestrate the pipeline: pre-flight → news + vendor-blogs (+ Instagram, when enabled) source-fetch in parallel → transcribe Reels (when IG enabled) → normalize → slow-day gate → cluster → recommend → render + dispatch the email. On a slow day (corpus below threshold), the gate skips clustering + recommendations and the email renders an alternate light-signal layout.
+Orchestrate the pipeline: pre-flight → news + vendor-blogs (+ Instagram, when enabled) source-fetch in parallel → transcribe Reels (when IG enabled) → normalize → slow-day gate → cluster → recommend → report → render + dispatch the email. On a slow day (corpus below threshold), the gate skips clustering + recommendations (and therefore the report) and the email renders an alternate light-signal layout. The report is a per-channel idea Report (`report.html`) produced by a dedicated subagent on the full path and attached to the Digest email.
 
 ## Stage-boundary timing
 
 Append one pure-info entry recording the stage boundary at the start of each numbered step below — except `init_run`, whose marker lands immediately *after* step 1 creates the run dir (you cannot write to `errors.log` before the dir exists). The `ErrorLog` schema auto-stamps each line with a UTC `timestamp`, so wall-clock spend per stage becomes inspectable in `errors.log` later. These are **pure info** (no `kind`), so they never appear in the email's Errors & Skips section — they exist only for after-the-fact analysis.
 
-Use these step tokens, one marker per stage: `init_run`, `source-fetch`, `transcribe`, `normalize`, `slow-day`, `cluster`, `recommend`, `render`. (The fetch stage runs two sources in parallel — three when IG is enabled — so its *failures* are attributed per-source under `news` / `vendor_blogs` / `scrape_instagram` in step 3, but the single timing marker for the whole stage uses `source-fetch`. The `transcribe` marker fires at the start of Phase 2 when IG is enabled; per-Reel Whisper failures attribute under `transcribe_reels` inside the script itself.) For example, before fetching:
+Use these step tokens, one marker per stage: `init_run`, `source-fetch`, `transcribe`, `normalize`, `slow-day`, `cluster`, `recommend`, `report`, `render`. (The fetch stage runs two sources in parallel — three when IG is enabled — so its *failures* are attributed per-source under `news` / `vendor_blogs` / `scrape_instagram` in step 3, but the single timing marker for the whole stage uses `source-fetch`. The `transcribe` marker fires at the start of Phase 2 when IG is enabled; per-Reel Whisper failures attribute under `transcribe_reels` inside the script itself.) For example, before fetching:
 
 ```
 uv run python -c "from pathlib import Path; from scripts.lib.error_log import ErrorLog; ErrorLog(Path('runs/<run_id>/errors.log')).log(step='source-fetch', severity='info', message='stage start: source-fetch')"
 ```
 
-Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (Phase 2 doesn't run). Skip the marker for any stage the slow-day gate skips (cluster, recommend).
+Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (Phase 2 doesn't run). Skip the marker for any stage the slow-day gate skips (cluster, recommend, report — the report runs only on the full path).
 
 ## Steps
 
@@ -121,13 +121,29 @@ Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (
 
    Clustering and recommendations are a strict dependency chain — run them sequentially, not in a single tool block.
 
-9. **Render + dispatch.** Bash:
+9. **Report (full-path only, non-fatal).** Skip this step entirely on a slow day (when `skipped_clustering.json` is present — clustering and recommendations never ran, so there is nothing to report and no `report.html` is written). Otherwise emit the `report` stage-boundary marker, then read `prompts/report_prompt.md`, `templates/report_template.html`, the full contents of `runs/<run_id>/trending_topics.json`, `runs/<run_id>/content_recommendations.json`, and `runs/<run_id>/corpus.json`, plus `content_channels` from `config.json`. Spawn **one** subagent (`subagent_type=general-purpose`, `model=sonnet`, fresh context). Its prompt is the report prompt, then the HTML template inlined verbatim, then the three JSON files inlined verbatim, then the channel list as plain prose and the run lines. For example:
+
+   ```
+   Channels to render (in order): substack, linkedin, instagram
+   Run ID: <run_id>
+   Output path: runs/<run_id>/report.html
+   ```
+
+   The subagent emits HTML directly (deviating from the repo's "subagents emit JSON, code renders" convention — see `docs/adr/0004-report-subagent-emits-html.md`). It writes `runs/<run_id>/report.html` as its **sole** artifact — no JSON scores file. After it returns, inspect `runs/<run_id>/report.html`. If it is **missing or empty/unreadable**, log a `warning` (step `report`) and continue — **no fallback file is written**, the run still ships its Digest:
+
+   ```
+   uv run python -c "from pathlib import Path; from scripts.lib.error_log import ErrorLog; ErrorLog(Path('runs/<run_id>/errors.log')).log(step='report', severity='warning', message='report subagent produced no readable report.html')"
+   ```
+
+10. **Render + dispatch.** Bash:
 
    ```
    uv run python -m scripts.send_email <run_id>
    ```
 
-10. **Final console line.** Read `runs/<run_id>/corpus.json`, `runs/<run_id>/trending_topics.json`, `runs/<run_id>/content_recommendations.json`, and `runs/<run_id>/errors.log`. Print one line:
+   `send_email` adds `report.html` to the attachment list behind an existence guard (see `scripts.send_email.gather_attachments`), so a slow day or a failed report step simply omits the attachment with no special-casing.
+
+11. **Final console line.** Read `runs/<run_id>/corpus.json`, `runs/<run_id>/trending_topics.json`, `runs/<run_id>/content_recommendations.json`, and `runs/<run_id>/errors.log`. Print one line:
 
    ```
    run_id=<run_id> items=<n> topics=<t> ideas=<i> errors=<m> email=<mode>:<id>
@@ -137,4 +153,4 @@ Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (
 
 ## Non-fatal handling
 
-Subagent or fetch failures land in `errors.log` (warning/info) and the pipeline continues — an empty source is expected, not a failure. A clustering or recommendations subagent that produces no valid file gets a logged `warning` plus an empty-but-valid fallback file, so the email still renders (as an empty topic-card digest) rather than aborting. Uncaught Python exceptions from any script abort the run and surface the failing step.
+Subagent or fetch failures land in `errors.log` (warning/info) and the pipeline continues — an empty source is expected, not a failure. A clustering or recommendations subagent that produces no valid file gets a logged `warning` plus an empty-but-valid fallback file, so the email still renders (as an empty topic-card digest) rather than aborting. The report subagent is non-fatal too, but **no** fallback file is written — if it produces no readable `report.html`, a `warning` lands under step `report` and `send_email` simply omits the attachment behind its existence guard. Uncaught Python exceptions from any script abort the run and surface the failing step.
