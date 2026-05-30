@@ -393,6 +393,145 @@ def test_empty_snapshot_per_account_logs_info_not_consequential(
     assert workspace.instagram_meta("hellovidya", "p1").is_file()
 
 
+def _discovery_error(handle: str) -> dict[str, Any]:
+    # Bright Data discovery-level failure: it found no posts for the handle at
+    # all. The handle URL lives in `input.url`; there's no `discovery_input`.
+    return {
+        "timestamp": "2026-05-30T15:05:47.240Z",
+        "input": {
+            "url": f"https://www.instagram.com/{handle}/",
+            "num_of_posts": 5,
+            "start_date": "05-29-2026",
+            "end_date": "05-30-2026",
+        },
+        "error": "Not found posts for specified period",
+        "error_code": "dead_page",
+    }
+
+
+def _post_error(handle: str, shortcode: str = "DY7ZsWXuO40") -> dict[str, Any]:
+    # Per-post failure: BD discovered a post URL for the handle but couldn't
+    # fetch it. The post URL is in `input.url`; the originating handle URL is
+    # in `discovery_input.url`.
+    return {
+        "timestamp": "2026-05-30T15:05:44.669Z",
+        "input": {
+            "url": f"https://www.instagram.com/p/{shortcode}/",
+            "posts_count": 214,
+            "followers": 13809,
+            "following": 19,
+        },
+        "error": "Post isn't available: The link may be broken, or the profile may have been removed.",
+        "error_code": "dead_page",
+        "discovery_input": {
+            "url": f"https://www.instagram.com/{handle}/",
+            "num_of_posts": 5,
+            "start_date": "05-29-2026",
+            "end_date": "05-30-2026",
+        },
+    }
+
+
+def test_zero_reels_with_bright_data_error_logs_warning(tmp_path: Path) -> None:
+    # The masking bug this fix targets: a handle that returned zero Reels
+    # *because Bright Data errored on it* (renamed/private/typo'd handle, or
+    # BD discovering nothing) must surface as a `warning` — NOT collapse into
+    # the bland `info` "quiet week" line that hides it from the email.
+    workspace, runs_root, config_path, accounts_path = _setup_paths(
+        tmp_path,
+        accounts={"instagram": ["brokenhandle"], "x": []},
+    )
+    client = FakeClient(fetch_returns=[_discovery_error("brokenhandle")])
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=FakeRunner(),
+    )
+
+    entries = _read_log(workspace.errors)
+    warnings = [e for e in entries if e["severity"] == "warning"]
+    assert len(warnings) == 1
+    [w] = warnings
+    assert w["step"] == "scrape_instagram"
+    assert "brokenhandle" in w["message"]
+    assert "Not found posts for specified period" in w["message"]
+    # The bland "quiet week" info line must NOT also fire for this handle.
+    assert not any(
+        e["severity"] == "info" and "in lookback window" in e["message"]
+        for e in entries
+    )
+
+
+def test_partial_dead_page_on_working_handle_logs_info_not_consequential(
+    tmp_path: Path,
+) -> None:
+    # A handle that delivered Reels but had some posts fail to fetch
+    # (transient `dead_page`) gets a pure-`info` row: visible in the raw log,
+    # kept out of the email so healthy handles don't spam Errors & Skips.
+    workspace, runs_root, config_path, accounts_path = _setup_paths(
+        tmp_path,
+        accounts={"instagram": ["hellovidya"], "x": []},
+    )
+    client = FakeClient(
+        fetch_returns=[_one_record(), _post_error("hellovidya")]
+    )
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=FakeRunner(return_codes=[0]),
+    )
+
+    # The good Reel still landed.
+    assert workspace.instagram_meta("hellovidya", "p1").is_file()
+
+    entries = _read_log(workspace.errors)
+    assert [e for e in entries if e["severity"] == "warning"] == []
+    info_rows = [e for e in entries if e["severity"] == "info"]
+    assert len(info_rows) == 1
+    [info] = info_rows
+    assert "hellovidya" in info["message"]
+    assert "failed to fetch" in info["message"]
+    # Pure info — must NOT surface in the email.
+    assert info.get("kind") != "consequential"
+
+
+def test_bright_data_error_for_unconfigured_handle_still_logged(
+    tmp_path: Path,
+) -> None:
+    # Defensive: an error row whose parsed handle matches no configured
+    # account must not vanish — dropping errors is the bug being fixed. It
+    # surfaces as a `warning` in the final sweep.
+    workspace, runs_root, config_path, accounts_path = _setup_paths(
+        tmp_path,
+        accounts={"instagram": ["hellovidya"], "x": []},
+    )
+    client = FakeClient(
+        fetch_returns=[_one_record(), _discovery_error("ghosthandle")]
+    )
+
+    scrape_instagram(
+        workspace.run_id,
+        runs_root=runs_root,
+        config_path=config_path,
+        accounts_path=accounts_path,
+        client=client,
+        runner=FakeRunner(return_codes=[0]),
+    )
+
+    entries = _read_log(workspace.errors)
+    warnings = [e for e in entries if e["severity"] == "warning"]
+    assert len(warnings) == 1
+    assert "ghosthandle" in warnings[0]["message"]
+
+
 def _one_record(account: str = "hellovidya", post_id: str = "p1") -> dict[str, Any]:
     return {
         "post_id": post_id,
