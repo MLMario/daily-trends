@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>daily-trends — Report {{RUN_ID}}</title>
+</head>
+<body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;background:#ffffff;max-width:960px;margin-left:auto;margin-right:auto;">
+
+  <h1 style="font-size:22px;margin:0 0 4px;">daily-trends — Report</h1>
+  <p style="margin:0 0 24px;color:#666;font-size:13px;">Run {{RUN_ID}}</p>
+
+  <!--
+    CHANNEL SECTIONS — one per configured Channel, in the order the Channel
+    list is given (data-driven; no hardcoded channel names). For each Channel,
+    render the block below once, then repeat the ROW for every Topic in Topic
+    order. Resources are the Topic's Sources (Outlet -> url), member_ids absent
+    from the corpus skipped silently. The Virality cell is the literal em dash
+    "—" for every row in this slice.
+  -->
+  <!-- BEGIN channel section (repeat per channel) -->
+  <section style="margin:0 0 32px;">
+    <h2 style="font-size:17px;margin:0 0 8px;text-transform:capitalize;border-bottom:2px solid #1a1a1a;padding-bottom:4px;">{{CHANNEL_NAME}}</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:8px 10px;border-bottom:1px solid #ccc;width:55%;">Idea</th>
+          <th style="text-align:left;padding:8px 10px;border-bottom:1px solid #ccc;width:30%;">Resources</th>
+          <th style="text-align:left;padding:8px 10px;border-bottom:1px solid #ccc;width:15%;">Virality</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- BEGIN topic row (repeat per topic, in Topic order) -->
+        <tr>
+          <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;">{{IDEA}}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;">
+            <!-- Sources: one link per resolved member, Outlet text -> url -->
+            {{RESOURCES}}
+          </td>
+          <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;color:#999;">—</td>
+        </tr>
+        <!-- END topic row -->
+      </tbody>
+    </table>
+  </section>
+  <!-- END channel section -->
+
+</body>
+</html>
