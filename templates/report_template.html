@@ -13,10 +13,30 @@
   <!--
     CHANNEL SECTIONS — one per configured Channel, in the order the Channel
     list is given (data-driven; no hardcoded channel names). For each Channel,
-    render the block below once, then repeat the ROW for every Topic in Topic
-    order. Resources are the Topic's Sources (Outlet -> url), member_ids absent
-    from the corpus skipped silently. The Virality cell is the literal em dash
-    "—" for every row in this slice.
+    render the block below once, then repeat the ROW for every Topic.
+
+    Resources are the Topic's Sources (Outlet -> url), member_ids absent from
+    the corpus skipped silently.
+
+    VIRALITY CELL — keyed on whether the Channel has a rubric:
+      * Scoreless channel (no rubric, e.g. substack): the Virality cell is the
+        literal em dash "—", and the section stays in Topic order.
+      * Scored channel (has a rubric, e.g. linkedin): the Virality cell is the
+        reusable VIRALITY BADGE below — the 1-10 composite as a color-coded
+        badge (red <=4, amber 5-7, green >=8) with the five per-dimension
+        sub-scores and the 2-sentence justification beneath. A scored section
+        is sorted by composite DESCENDING (best bet at the top), not Topic order.
+  -->
+
+  <!--
+    REUSABLE VIRALITY BADGE (scored channels only). Drop this whole block into a
+    scored channel's Virality cell, swapping: the band modifier class
+    "virality-badge--{red|amber|green}" and its matching background color
+    (red #e5534b, amber #d9a514, green #2da44e), the composite "N/10", each
+    sub-score value, and the 2-sentence justification. Self-contained inline CSS
+    — no external assets. (Canonical markup: scripts/lib/virality_badge.py.)
+
+    <div class="virality-cell" style="vertical-align:top;"><span class="virality-badge virality-badge--green" style="display:inline-block;min-width:28px;padding:3px 9px;border-radius:12px;background:#2da44e;color:#fff;font-weight:700;font-size:13px;text-align:center;">8/10</span><ul class="virality-subscores" style="list-style:none;margin:6px 0 0;padding:0;font-size:11px;line-height:1.5;"><li style="margin:0;"><span style="color:#666;">Hook Tension:</span> 9</li><li style="margin:0;"><span style="color:#666;">Opinion Sharpness:</span> 8</li><li style="margin:0;"><span style="color:#666;">Narrative Structure:</span> 7</li><li style="margin:0;"><span style="color:#666;">Niche Fit:</span> 8</li><li style="margin:0;"><span style="color:#666;">Saveability:</span> 6</li></ul><p class="virality-justification" style="margin:6px 0 0;font-size:11px;color:#444;line-height:1.4;">Two-sentence justification of the score. Second sentence.</p></div>
   -->
   <!-- BEGIN channel section (repeat per channel) -->
   <section style="margin:0 0 32px;">
@@ -30,14 +50,17 @@
         </tr>
       </thead>
       <tbody>
-        <!-- BEGIN topic row (repeat per topic, in Topic order) -->
+        <!-- BEGIN topic row (repeat per topic; Topic order for a scoreless
+             channel, composite-descending for a scored channel) -->
         <tr>
           <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;">{{IDEA}}</td>
           <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;">
             <!-- Sources: one link per resolved member, Outlet text -> url -->
             {{RESOURCES}}
           </td>
-          <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;color:#999;">—</td>
+          <!-- Scoreless channel: the literal em dash. Scored channel: the
+               reusable VIRALITY BADGE block (see the comment above). -->
+          <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;color:#999;">{{VIRALITY}}</td>
         </tr>
         <!-- END topic row -->
       </tbody>
