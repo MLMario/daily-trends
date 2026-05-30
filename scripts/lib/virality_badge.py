@@ -30,6 +30,20 @@ LINKEDIN_RUBRIC: dict[str, float] = {
     "Saveability": 0.10,
 }
 
+# The Instagram Reels rubric (issue #40): the same weighted-composite shape, but
+# tuned for short-form video — a Reel concept judged 1-10 from the Idea text +
+# Topic context (no Reel engagement metrics). The 1->10 anchor descriptions live
+# in prompts/report_prompt.md; the *weights* live here so `instagram` composites
+# are computed by the same `composite_score` as `linkedin`, reusing the badge
+# component unchanged (ADR-0005).
+INSTAGRAM_RUBRIC: dict[str, float] = {
+    "3-Second Hook": 0.30,
+    "Emotional Valence / Send-impulse": 0.25,
+    "Completability / Pacing": 0.25,
+    "Universality of Premise": 0.10,
+    "Audio / Trend Leverage": 0.10,
+}
+
 
 def composite_score(subscores: dict[str, int], rubric: dict[str, float]) -> int:
     """Weighted average of the per-dimension sub-scores, rounded to a 1-10 int.

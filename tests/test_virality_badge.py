@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.lib.virality_badge import (
+    INSTAGRAM_RUBRIC,
     LINKEDIN_RUBRIC,
     band_for_score,
     composite_score,
@@ -112,6 +113,16 @@ def test_linkedin_rubric_weights_match_the_spec() -> None:
     }
 
 
+def test_instagram_rubric_weights_match_the_spec() -> None:
+    assert INSTAGRAM_RUBRIC == {
+        "3-Second Hook": 0.30,
+        "Emotional Valence / Send-impulse": 0.25,
+        "Completability / Pacing": 0.25,
+        "Universality of Premise": 0.10,
+        "Audio / Trend Leverage": 0.10,
+    }
+
+
 def test_composite_is_the_rounded_weighted_average_of_subscores() -> None:
     # 9*.25 + 8*.25 + 7*.20 + 8*.20 + 6*.10 = 2.25+2+1.4+1.6+0.6 = 7.85 -> 8
     assert composite_score(SUBSCORES, LINKEDIN_RUBRIC) == 8
@@ -139,6 +150,64 @@ def test_composite_rounds_half_up_at_a_tie() -> None:
     assert composite_score(half_tie, LINKEDIN_RUBRIC) == 5
     # And the band flips with it: 4 is red, 5 is amber. The tie must land amber.
     assert band_for_score(composite_score(half_tie, LINKEDIN_RUBRIC)) == "amber"
+
+
+def test_instagram_rubric_weights_sum_to_one() -> None:
+    # The composite is a weighted average; if the weights drifted off 1.0 the
+    # composite would no longer be on the 1-10 scale the badge bands assume.
+    assert sum(INSTAGRAM_RUBRIC.values()) == 1.0
+
+
+def test_instagram_composite_is_the_rounded_weighted_average_of_subscores() -> None:
+    # `instagram` reuses the same `composite_score`/badge component as `linkedin`
+    # (ADR-0005) — only the rubric differs. Score an IG Reel concept:
+    # 9*.30 + 8*.25 + 7*.25 + 6*.10 + 5*.10 = 2.7+2.0+1.75+0.6+0.5 = 7.55 -> 8
+    ig_subscores = {
+        "3-Second Hook": 9,
+        "Emotional Valence / Send-impulse": 8,
+        "Completability / Pacing": 7,
+        "Universality of Premise": 6,
+        "Audio / Trend Leverage": 5,
+    }
+    assert composite_score(ig_subscores, INSTAGRAM_RUBRIC) == 8
+    assert band_for_score(composite_score(ig_subscores, INSTAGRAM_RUBRIC)) == "green"
+
+
+def test_instagram_composite_rounds_half_up_at_a_tie() -> None:
+    # Same round-half-up rule as LinkedIn, exercised through the IG weights.
+    # 7*.30 + 4*.25 + 4*.25 + 2*.10 + 2*.10 = 2.1+1.0+1.0+0.2+0.2 = 4.5
+    half_tie = {
+        "3-Second Hook": 7,
+        "Emotional Valence / Send-impulse": 4,
+        "Completability / Pacing": 4,
+        "Universality of Premise": 2,
+        "Audio / Trend Leverage": 2,
+    }
+    assert composite_score(half_tie, INSTAGRAM_RUBRIC) == 5
+    assert band_for_score(composite_score(half_tie, INSTAGRAM_RUBRIC)) == "amber"
+
+
+def test_instagram_reuses_the_same_badge_component() -> None:
+    # AC: the `instagram` Virality cell reuses the #39 badge component unchanged.
+    # The five IG sub-scores and justification render through the same
+    # `render_badge`, with no instagram-specific markup.
+    ig_subscores = {
+        "3-Second Hook": 9,
+        "Emotional Valence / Send-impulse": 8,
+        "Completability / Pacing": 7,
+        "Universality of Premise": 6,
+        "Audio / Trend Leverage": 5,
+    }
+    out = render_badge(
+        composite=8,
+        subscores=ig_subscores,
+        justification="A scroll-stopping first frame. The premise is universally relatable.",
+    )
+    assert "virality-badge--green" in out
+    for dimension, value in ig_subscores.items():
+        assert dimension in out
+        assert str(value) in out
+    assert "A scroll-stopping first frame. The premise is universally relatable." in out
 
 
 def test_template_embeds_the_canonical_render_badge_markup() -> None:
