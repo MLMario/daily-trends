@@ -20,7 +20,7 @@ One **row per Topic** (from `topics`). For each Topic, in each Channel's section
 - **Resources** — the Topic's **Sources**: resolve its `member_ids` against `corpus.json`, and render each resolved item as a link whose text is its `account_or_outlet` (the **Outlet**) pointing at its `url` (Outlet -> url). An id **absent from the corpus is skipped silently** — exactly as the Digest does. If none resolve, leave the cell empty.
 - **Virality** — depends on whether *that Channel has a rubric* (see below). Key the scored-vs-scoreless decision off **rubric presence**, not a hardcoded channel name:
   - **Scoreless channel** (no rubric — e.g. `substack`): render the literal em dash `—`.
-  - **Scored channel** (has a rubric — e.g. `linkedin`): score the Idea per that channel's rubric and render the **Virality badge** (below).
+  - **Scored channel** (has a rubric — e.g. `linkedin`, `instagram`): score the Idea per that channel's rubric and render the **Virality badge** (below).
 
 ## Virality scoring (scored channels)
 
@@ -41,6 +41,20 @@ A scored channel has a **rubric**: a set of weighted 1–10 dimensions. You judg
 | **Saveability** | 10% | 1: disposable, nothing to keep. 5: a useful nugget. 10: a reference-worthy insight or framework the reader will save and return to. |
 
 Compute the composite as `0.25·HookTension + 0.25·OpinionSharpness + 0.20·NarrativeStructure + 0.20·NicheFit + 0.10·Saveability`, rounded to the nearest integer (ties round half up). The canonical weights and the composite/banding math also live in `scripts/lib/virality_badge.py`.
+
+### Instagram Reels rubric (composite 1–10)
+
+You judge an `instagram` Idea as an **unpublished Reel concept** — score it from the Idea text + that Topic's context only, never from any Reel engagement metrics (likes, views, shares, saves).
+
+| Dimension | Weight | 1 (weak) → 10 (exceptional) |
+| --- | --- | --- |
+| **3-Second Hook** | 30% | 1: a slow, contextless open that gives no reason to keep watching. 5: a passable opener that takes a beat to land. 10: the first frame/line stops the thumb instantly — a visual or verbal pattern-interrupt that demands the next three seconds. |
+| **Emotional Valence / Send-impulse** | 25% | 1: flat, evokes nothing, no reason to share. 5: a mild "huh, neat" that some might send. 10: a strong emotional spike (awe, outrage, delight, "this is so you") that makes a viewer DM it to a specific person. |
+| **Completability / Pacing** | 25% | 1: long, meandering, easy to drop before the payoff. 5: watchable but with slack moments. 10: tight, escalating pacing with a payoff that earns the full watch and a loop — no dead air. |
+| **Universality of Premise** | 10% | 1: niche-locked, lands only for a tiny in-group. 5: relatable to a broad-ish slice. 10: a premise nearly anyone scrolling will instantly grok and see themselves in. |
+| **Audio / Trend Leverage** | 10% | 1: no audio/format hook, ignores what's spreading. 5: uses sound or a familiar format adequately. 10: rides a trending audio or a proven Reel format in a way that compounds reach without feeling forced. |
+
+Compute the composite as `0.30·ThreeSecondHook + 0.25·EmotionalValence + 0.25·Completability + 0.10·Universality + 0.10·AudioTrendLeverage`, rounded to the nearest integer (ties round half up). The canonical weights and the composite/banding math also live in `scripts/lib/virality_badge.py` (`INSTAGRAM_RUBRIC`).
 
 ### The Virality badge
 
