@@ -128,10 +128,19 @@ def scrape_instagram(
     runner = runner or subprocess.run
 
     accounts_with_records: set[str] = set()
+    # `include_errors=True` makes Bright Data fold per-handle/per-post error
+    # rows into the snapshot (e.g. `dead_page`, "Not found posts for specified
+    # period"). They carry no `user_posted`/`post_id`, so they'd otherwise be
+    # dropped by the demux below — masking a broken handle as a quiet week.
+    # Collect them keyed by the handle BD attributes them to.
+    errors_by_handle: dict[str, list[dict[str, Any]]] = {}
     for record in records:
         account = record.get("user_posted")
         post_id = record.get("post_id")
         if not account or not post_id:
+            if record.get("error") or record.get("error_code"):
+                handle = _error_handle(record)
+                errors_by_handle.setdefault(handle or "", []).append(record)
             continue
         meta_path = workspace.instagram_meta(account, post_id)
         meta_path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,7 +152,36 @@ def scrape_instagram(
         _download_reel(record, workspace=workspace, runner=runner, log=log)
 
     for account in accounts:
-        if account not in accounts_with_records:
+        errs = errors_by_handle.get(account)
+        if account in accounts_with_records:
+            # Got Reels — but BD may still have failed to fetch some in-window
+            # posts (transient `dead_page`). `info` (not consequential): visible
+            # in the raw log for an operator who looks, kept out of the email so
+            # partial failures on healthy handles don't spam Errors & Skips.
+            if errs:
+                log.log(
+                    step=STEP,
+                    severity="info",
+                    message=(
+                        f"Bright Data failed to fetch {len(errs)} post(s) for "
+                        f"@{account}: {_summarize_errors(errs)}"
+                    ),
+                )
+            continue
+        if errs:
+            # Zero Reels AND BD reported an error for this handle — this is the
+            # real miss the bland "quiet week" line used to hide (a renamed /
+            # private / typo'd handle, or BD discovering nothing). `warning`
+            # so it surfaces in the email's Errors & Skips.
+            log.log(
+                step=STEP,
+                severity="warning",
+                message=(
+                    f"no Reels for @{account} — Bright Data reported "
+                    f"{len(errs)} error(s): {_summarize_errors(errs)}"
+                ),
+            )
+        else:
             # Quiet creator week — `info` not `consequential`, so the email's
             # Errors & Skips section stays clean. The raw log still carries
             # the row for the operator if they go looking.
@@ -152,6 +190,23 @@ def scrape_instagram(
                 severity="info",
                 message=f"no Reels for @{account} in lookback window",
             )
+
+    # Error rows whose handle didn't match any configured account (e.g. an
+    # unexpected URL shape) would otherwise vanish — surface them rather than
+    # silently drop, since dropping errors is exactly the bug being fixed.
+    configured = set(accounts)
+    for handle, errs in errors_by_handle.items():
+        if handle in configured:
+            continue
+        log.log(
+            step=STEP,
+            severity="warning",
+            message=(
+                f"Bright Data reported {len(errs)} error(s) not matched to a "
+                f"configured handle (parsed @{handle or '?'}): "
+                f"{_summarize_errors(errs)}"
+            ),
+        )
 
 
 def _download_reel(
@@ -216,6 +271,42 @@ def _build_trigger_body(
         }
         for account in accounts
     ]
+
+
+def _error_handle(record: dict[str, Any]) -> str | None:
+    """Best-effort handle extraction from a Bright Data error row.
+
+    Discovery-level errors ("Not found posts for specified period") put the
+    handle URL in `input.url`; per-post errors (`dead_page`) put the post URL
+    there and the originating handle URL in `discovery_input.url`. Prefer
+    `discovery_input` so per-post failures attribute to the handle, not to a
+    `/p/<shortcode>/` path.
+    """
+    for key in ("discovery_input", "input"):
+        src = record.get(key)
+        url = src.get("url") if isinstance(src, dict) else None
+        if not url:
+            continue
+        parts = url.rstrip("/").split("instagram.com/", 1)
+        if len(parts) == 2:
+            handle = parts[1].split("/", 1)[0]
+            # A `/p/<shortcode>/` URL parses to "p" — not a handle. Skip it so
+            # the loop falls through to `discovery_input` (or returns None).
+            if handle and handle != "p":
+                return handle
+    return None
+
+
+def _summarize_errors(errs: list[dict[str, Any]]) -> str:
+    """Compact, de-duplicated `code: message` summary for a log line."""
+    seen: list[str] = []
+    for e in errs:
+        code = e.get("error_code") or "error"
+        msg = e.get("error") or ""
+        item = f"{code}: {msg}".strip().rstrip(":").strip()
+        if item not in seen:
+            seen.append(item)
+    return "; ".join(seen)
 
 
 def _read_accounts(accounts_path: Path) -> list[str]:
