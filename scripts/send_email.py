@@ -22,6 +22,25 @@ CONFIG = REPO_ROOT / "config.json"
 CREDS = REPO_ROOT / "credentials"
 
 
+def gather_attachments(workspace: RunWorkspace) -> list[Attachment]:
+    """Per-run artifacts to ride along with the Digest email.
+
+    Each path is guarded by an existence check, so a slow day (no synthesis
+    files) or a failed report step simply omits the attachment with no special
+    casing — report.html joins the same guarded list as the synthesis JSON.
+    """
+    candidates = (
+        workspace.trending_topics,
+        workspace.content_recommendations,
+        workspace.report,
+    )
+    return [
+        Attachment(filename=path.name, content=path.read_bytes())
+        for path in candidates
+        if path.exists()
+    ]
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print("usage: python -m scripts.send_email <run_id>", file=sys.stderr)
@@ -34,11 +53,7 @@ def main(argv: list[str]) -> int:
     renderer = EmailRenderer(workspace)
     html_body = renderer.render(run_id=workspace.run_id)
 
-    attachments = [
-        Attachment(filename=path.name, content=path.read_bytes())
-        for path in (workspace.trending_topics, workspace.content_recommendations)
-        if path.exists()
-    ]
+    attachments = gather_attachments(workspace)
 
     sender = GmailSender(
         client_file=CREDS / "oauth_client.json",
