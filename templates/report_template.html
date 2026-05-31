@@ -4,63 +4,290 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>daily-trends — Report {{RUN_ID}}</title>
-</head>
-<body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;background:#ffffff;max-width:960px;margin-left:auto;margin-right:auto;">
+<style>
+  /* ----------------------------------------------------------------------
+     daily-trends — Report. A self-contained editorial briefing: warm paper,
+     a serif masthead, and the page's ONLY color reserved for the Virality
+     badges so the signal reads at a glance. No external fonts/CSS/JS/network
+     — it must render correctly when opened straight from disk (ADR-0004).
+     System-font stacks only; Georgia carries the editorial voice.
+     ------------------------------------------------------------------- */
+  :root {
+    --paper:        #ece5d6;   /* desk */
+    --sheet:        #f7f3ea;   /* the page itself */
+    --ink:          #1c1a16;   /* warm near-black */
+    --muted:        #6f685b;   /* secondary text */
+    --faint:        #8a8275;   /* labels, captions */
+    --rule:         #ddd5c4;   /* hairlines */
+    --rule-strong:  #1c1a16;   /* masthead / section rules */
+    --link:         #1c1a16;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+    --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono:  "SFMono-Regular", ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+  }
 
-  <h1 style="font-size:22px;margin:0 0 4px;">daily-trends — Report</h1>
-  <p style="margin:0 0 24px;color:#666;font-size:13px;">Run {{RUN_ID}}</p>
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 40px 24px 64px;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 1000px;
+    margin: 0 auto;
+    background: var(--sheet);
+    border: 1px solid var(--rule);
+    box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 24px 48px -28px rgba(28,26,22,0.45);
+    padding: 48px 52px 40px;
+  }
+
+  /* ---- Masthead ---------------------------------------------------------- */
+  .masthead { border-bottom: 3px solid var(--rule-strong); padding-bottom: 20px; }
+  .masthead__eyebrow {
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 10px;
+  }
+  .masthead__title {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 46px;
+    line-height: 0.96;
+    letter-spacing: -0.015em;
+    margin: 0;
+  }
+  .masthead__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px 24px;
+    margin-top: 14px;
+  }
+  .masthead__dek {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--muted);
+    margin: 0;
+    max-width: 60ch;
+  }
+  .masthead__run { font-family: var(--mono); font-size: 12px; color: var(--faint); white-space: nowrap; }
+
+  /* ---- Legend (band key) ------------------------------------------------- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin: 18px 0 0;
+    padding: 12px 0 0;
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+  }
+  .legend__item { display: inline-flex; align-items: center; gap: 7px; }
+  .legend__dot { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+  .legend__dot--red   { background: #a8392b; }
+  .legend__dot--amber { background: #946b1c; }
+  .legend__dot--green { background: #356845; }
+
+  /* ---- Channel section --------------------------------------------------- */
+  .channel { margin-top: 44px; }
+  .channel__head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    border-bottom: 1.5px solid var(--rule-strong);
+    padding-bottom: 8px;
+  }
+  .channel__name {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+    text-transform: capitalize;
+    margin: 0;
+  }
+  .channel__note {
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  /* ---- Ideas table ------------------------------------------------------- */
+  .ideas { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .ideas thead th {
+    font-family: var(--sans);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+    text-align: left;
+    padding: 14px 16px 8px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .ideas tbody tr { border-bottom: 1px solid var(--rule); }
+  .ideas tbody tr:last-child { border-bottom: 0; }
+  .ideas td { padding: 18px 16px; vertical-align: top; }
+
+  .col-idea      { width: 50%; }
+  .col-resources { width: 24%; }
+  .col-virality  { width: 26%; }
+
+  .idea {
+    font-family: var(--serif);
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink);
+  }
+
+  /* Resources: each {{RESOURCES}} link is auto-styled — emit bare <a href>. */
+  .resources { font-family: var(--sans); font-size: 12.5px; }
+  .resources a {
+    display: block;
+    color: var(--link);
+    text-decoration: none;
+    padding: 3px 0 3px 14px;
+    position: relative;
+    border-bottom: 1px dotted transparent;
+    line-height: 1.35;
+  }
+  .resources a::before {
+    content: "\2197";              /* ↗ */
+    position: absolute;
+    left: 0;
+    color: var(--faint);
+    font-size: 11px;
+  }
+  .resources a:hover { border-bottom-color: var(--rule-strong); }
+
+  /* Virality cell. Scoreless channels render the em-dash; scored channels
+     render the reusable badge block (see comment below). */
+  .dash { color: var(--faint); font-size: 20px; font-family: var(--serif); }
+
+  /* ---- Footer ------------------------------------------------------------ */
+  .colophon {
+    margin-top: 48px;
+    padding-top: 16px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--faint);
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 720px) {
+    .sheet { padding: 28px 20px; }
+    .masthead__title { font-size: 34px; }
+    .ideas td { padding: 14px 8px; }
+  }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .sheet { box-shadow: none; border: 0; max-width: none; padding: 0; }
+    .resources a { color: #000; }
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <!-- ===================== MASTHEAD (render once) ===================== -->
+  <header class="masthead">
+    <p class="masthead__eyebrow">daily-trends &middot; dispatch</p>
+    <h1 class="masthead__title">The Report</h1>
+    <div class="masthead__row">
+      <p class="masthead__dek">Today's signal, transposed by channel &mdash; your best bets up top.</p>
+      <span class="masthead__run">Run {{RUN_ID}}</span>
+    </div>
+    <div class="legend">
+      <span class="legend__item"><span class="legend__dot legend__dot--green"></span>Best bet (8&ndash;10)</span>
+      <span class="legend__item"><span class="legend__dot legend__dot--amber"></span>Contender (5&ndash;7)</span>
+      <span class="legend__item"><span class="legend__dot legend__dot--red"></span>Weak (1&ndash;4)</span>
+    </div>
+  </header>
 
   <!--
-    CHANNEL SECTIONS — one per configured Channel, in the order the Channel
-    list is given (data-driven; no hardcoded channel names). For each Channel,
-    render the block below once, then repeat the ROW for every Topic.
+    ===================== CHANNEL SECTIONS =====================
+    Render ONE <section class="channel"> per configured Channel, in the order
+    the Channel list is given (data-driven — no hardcoded channel names). Inside
+    each, repeat one <tr> per Topic.
 
-    Resources are the Topic's Sources (Outlet -> url), member_ids absent from
-    the corpus skipped silently.
+    channel__note (top-right caption) — set it to:
+      * "In topic order"     for a scoreless channel (no rubric, e.g. substack)
+      * "Best bets first"    for a scored channel (has a rubric, e.g. linkedin)
 
-    VIRALITY CELL — keyed on whether the Channel has a rubric:
-      * Scoreless channel (no rubric, e.g. substack): the Virality cell is the
-        literal em dash "—", and the section stays in Topic order.
-      * Scored channel (has a rubric, e.g. linkedin): the Virality cell is the
-        reusable VIRALITY BADGE below — the 1-10 composite as a color-coded
-        badge (red <=4, amber 5-7, green >=8) with the five per-dimension
-        sub-scores and the 2-sentence justification beneath. A scored section
-        is sorted by composite DESCENDING (best bet at the top), not Topic order.
+    Resources cell — emit one bare <a href="url">Outlet</a> per resolved Source
+    (member_id -> corpus item: text = account_or_outlet, href = url). The ↗ marker
+    and block layout are styled automatically; do NOT add inline styles. Ids
+    absent from the corpus are skipped silently; if none resolve, leave it empty.
+
+    Virality cell — keyed on whether the Channel has a rubric:
+      * Scoreless channel: <span class="dash">&mdash;</span>, section stays in Topic order.
+      * Scored channel: the reusable VIRALITY BADGE below — the 1-10 composite as a
+        color-coded badge (red <=4, amber 5-7, green >=8) with the five sub-scores
+        and the 2-sentence justification beneath. A scored section is sorted by
+        composite DESCENDING (best bet at the top), not Topic order.
   -->
 
   <!--
     REUSABLE VIRALITY BADGE (scored channels only). Drop this whole block into a
     scored channel's Virality cell, swapping: the band modifier class
     "virality-badge--{red|amber|green}" and its matching background color
-    (red #e5534b, amber #d9a514, green #2da44e), the composite "N/10", each
+    (red #a8392b, amber #946b1c, green #356845), the composite "N/10", each
     sub-score value, and the 2-sentence justification. Self-contained inline CSS
     — no external assets. (Canonical markup: scripts/lib/virality_badge.py.)
 
-    <div class="virality-cell" style="vertical-align:top;"><span class="virality-badge virality-badge--green" style="display:inline-block;min-width:28px;padding:3px 9px;border-radius:12px;background:#2da44e;color:#fff;font-weight:700;font-size:13px;text-align:center;">8/10</span><ul class="virality-subscores" style="list-style:none;margin:6px 0 0;padding:0;font-size:11px;line-height:1.5;"><li style="margin:0;"><span style="color:#666;">Hook Tension:</span> 9</li><li style="margin:0;"><span style="color:#666;">Opinion Sharpness:</span> 8</li><li style="margin:0;"><span style="color:#666;">Narrative Structure:</span> 7</li><li style="margin:0;"><span style="color:#666;">Niche Fit:</span> 8</li><li style="margin:0;"><span style="color:#666;">Saveability:</span> 6</li></ul><p class="virality-justification" style="margin:6px 0 0;font-size:11px;color:#444;line-height:1.4;">Two-sentence justification of the score. Second sentence.</p></div>
+    <div class="virality-cell" style="vertical-align:top;"><span class="virality-badge virality-badge--green" style="display:inline-block;min-width:34px;padding:4px 11px;border-radius:3px;background:#356845;color:#fdfbf6;font-weight:700;font-size:13px;letter-spacing:0.04em;text-align:center;">8/10</span><ul class="virality-subscores" style="list-style:none;margin:10px 0 0;padding:0;font-size:11px;line-height:1.5;"><li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #e6dfd0;"><span style="color:#8a8275;">Hook Tension</span><span style="color:#1c1a16;font-weight:600;">9</span></li><li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #e6dfd0;"><span style="color:#8a8275;">Opinion Sharpness</span><span style="color:#1c1a16;font-weight:600;">8</span></li><li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #e6dfd0;"><span style="color:#8a8275;">Narrative Structure</span><span style="color:#1c1a16;font-weight:600;">7</span></li><li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #e6dfd0;"><span style="color:#8a8275;">Niche Fit</span><span style="color:#1c1a16;font-weight:600;">8</span></li><li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #e6dfd0;"><span style="color:#8a8275;">Saveability</span><span style="color:#1c1a16;font-weight:600;">6</span></li></ul><p class="virality-justification" style="margin:10px 0 0;font-size:11.5px;font-family:Georgia,serif;font-style:italic;color:#5c5648;line-height:1.5;">Two-sentence justification of the score. Second sentence.</p></div>
   -->
+
   <!-- BEGIN channel section (repeat per channel) -->
-  <section style="margin:0 0 32px;">
-    <h2 style="font-size:17px;margin:0 0 8px;text-transform:capitalize;border-bottom:2px solid #1a1a1a;padding-bottom:4px;">{{CHANNEL_NAME}}</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+  <section class="channel">
+    <div class="channel__head">
+      <h2 class="channel__name">{{CHANNEL_NAME}}</h2>
+      <span class="channel__note">{{CHANNEL_NOTE}}</span>
+    </div>
+    <table class="ideas">
       <thead>
         <tr>
-          <th style="text-align:left;padding:8px 10px;border-bottom:1px solid #ccc;width:55%;">Idea</th>
-          <th style="text-align:left;padding:8px 10px;border-bottom:1px solid #ccc;width:30%;">Resources</th>
-          <th style="text-align:left;padding:8px 10px;border-bottom:1px solid #ccc;width:15%;">Virality</th>
+          <th class="col-idea">Idea</th>
+          <th class="col-resources">Resources</th>
+          <th class="col-virality">Virality</th>
         </tr>
       </thead>
       <tbody>
         <!-- BEGIN topic row (repeat per topic; Topic order for a scoreless
              channel, composite-descending for a scored channel) -->
         <tr>
-          <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;">{{IDEA}}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;">
-            <!-- Sources: one link per resolved member, Outlet text -> url -->
-            {{RESOURCES}}
+          <td class="col-idea"><div class="idea">{{IDEA}}</div></td>
+          <td class="col-resources">
+            <div class="resources">
+              <!-- one bare <a href="url">Outlet</a> per resolved Source -->
+              {{RESOURCES}}
+            </div>
           </td>
-          <!-- Scoreless channel: the literal em dash. Scored channel: the
-               reusable VIRALITY BADGE block (see the comment above). -->
-          <td style="padding:8px 10px;border-bottom:1px solid #eee;vertical-align:top;color:#999;">{{VIRALITY}}</td>
+          <!-- Scoreless: <span class="dash">&mdash;</span>. Scored: the badge block above. -->
+          <td class="col-virality">{{VIRALITY}}</td>
         </tr>
         <!-- END topic row -->
       </tbody>
@@ -68,5 +295,11 @@
   </section>
   <!-- END channel section -->
 
+  <footer class="colophon">
+    <span>daily-trends &middot; the Report</span>
+    <span>Run {{RUN_ID}}</span>
+  </footer>
+
+</div>
 </body>
 </html>

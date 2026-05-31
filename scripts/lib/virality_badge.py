@@ -72,7 +72,9 @@ def band_for_score(score: int) -> str:
 
 # Inline-CSS colors per band — self-contained so the badge renders from disk
 # with no network, stylesheet, or font dependency (ADR-0004's constraint).
-_BAND_BG = {"red": "#e5534b", "amber": "#d9a514", "green": "#2da44e"}
+# Editorial palette: oxblood / deep-ochre / forest, tuned to read as the page's
+# only color against the warm-paper Report and to carry warm-white text legibly.
+_BAND_BG = {"red": "#a8392b", "amber": "#946b1c", "green": "#356845"}
 
 
 def _esc(value: str) -> str:
@@ -91,23 +93,27 @@ def render_badge(*, composite: int, subscores: dict[str, int], justification: st
     bg = _BAND_BG[band]
     badge = (
         f'<span class="virality-badge virality-badge--{band}" '
-        f'style="display:inline-block;min-width:28px;padding:3px 9px;border-radius:12px;'
-        f'background:{bg};color:#fff;font-weight:700;font-size:13px;text-align:center;">'
+        f'style="display:inline-block;min-width:34px;padding:4px 11px;border-radius:3px;'
+        f'background:{bg};color:#fdfbf6;font-weight:700;font-size:13px;letter-spacing:0.04em;'
+        f'text-align:center;">'
         f"{_esc(str(composite))}/10</span>"
     )
     sub_rows = "".join(
-        f'<li style="margin:0;"><span style="color:#666;">{_esc(dimension)}:</span> '
-        f"{_esc(str(value))}</li>"
+        f'<li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;'
+        f'border-bottom:1px solid #e6dfd0;">'
+        f'<span style="color:#8a8275;">{_esc(dimension)}</span>'
+        f'<span style="color:#1c1a16;font-weight:600;">{_esc(str(value))}</span></li>'
         for dimension, value in subscores.items()
     )
     subscores_block = (
         f'<ul class="virality-subscores" '
-        f'style="list-style:none;margin:6px 0 0;padding:0;font-size:11px;line-height:1.5;">'
+        f'style="list-style:none;margin:10px 0 0;padding:0;font-size:11px;line-height:1.5;">'
         f"{sub_rows}</ul>"
     )
     justification_block = (
         f'<p class="virality-justification" '
-        f'style="margin:6px 0 0;font-size:11px;color:#444;line-height:1.4;">'
+        f'style="margin:10px 0 0;font-size:11.5px;font-family:Georgia,serif;font-style:italic;'
+        f'color:#5c5648;line-height:1.5;">'
         f"{_esc(justification)}</p>"
     )
     return (
