@@ -26,6 +26,32 @@ _Avoid_: document, entry, post.
 A cluster of ≥ 2 corpus items that the clustering subagent has decided are about the same underlying story. Singletons are not topics — they land in `other_notable`.
 _Avoid_: cluster, group, theme.
 
+### Deliverables
+
+**Digest**:
+The per-run email deliverable: a topic-card HTML body rendered deterministically by `EmailRenderer` from `trending_topics.json` + `content_recommendations.json` (full path) or a light-signal layout (slow day), then dispatched via Gmail. The run's primary output; the Report rides along as an attachment.
+_Avoid_: email (too generic — the Digest is the *content*; the email is the envelope), newsletter, summary.
+
+**Report**:
+A per-run, idea-centric HTML deliverable grouped by **Channel**, produced by a dedicated report subagent alongside the Digest and attached to the same Digest email. Materialised as `runs/<run_id>/report.html` — the subagent's sole artifact (it emits HTML directly; see `docs/adr/0004-*`). One section per Channel, each a three-column **Idea | Resources | Virality** table, one row per Topic. Produced only on the full path; a slow day writes no Report.
+_Avoid_: digest (the Digest is the email body, distinct), scorecard, dashboard.
+
+**Idea**:
+One per-Channel content suggestion for a Topic — the cell the Report leads with. Sourced from a recommendation's `ideas` map keyed by Channel (`ideas[<channel>]`). The same `Idea` vocabulary the recommendations subagent already produces; the Report surfaces it per Channel rather than per Topic card.
+_Avoid_: recommendation (reserved for the subagent/file), suggestion, post.
+
+**Virality score**:
+The per-row signal of how likely a Topic's Idea is to spread on a given Channel — the Report's third column. A 1–10 composite the report subagent computes per **rubric** from the Idea text + Topic context only (no source-post engagement metrics), backed by five per-dimension sub-scores and a 2-sentence justification, rendered as a color-coded **Virality badge** (red ≤4, amber 5–7, green ≥8). Scoring is per-Channel and **rubric-keyed**: a Channel with a rubric is scored and its section sorts by composite descending; a Channel without one (e.g. `substack`) reads the literal em dash `—` and stays in Topic order. `linkedin` and `instagram` scoring shipped; the band/weight/badge math is the tested `scripts/lib/virality_badge.py`.
+_Avoid_: engagement, reach, popularity, score (qualify it — always "Virality score").
+
+**Rubric**:
+A Channel-specific, weighted set of 1–10 dimensions the report subagent scores an Idea against to produce its **Virality score**. The LinkedIn rubric is Hook Tension 25%, Opinion Sharpness 25%, Narrative Structure 20%, Niche Fit 20%, Saveability 10%; the Instagram Reels rubric is 3-Second Hook 30%, Emotional Valence / Send-impulse 25%, Completability / Pacing 25%, Universality of Premise 10%, Audio / Trend Leverage 10%. Each rubric's 1→10 anchor descriptions live in `prompts/report_prompt.md`, its weights + composite/band math in `scripts/lib/virality_badge.py` (`LINKEDIN_RUBRIC`, `INSTAGRAM_RUBRIC`). A Channel either has a rubric (scored) or does not (scoreless `—`) — the rubric's *presence* is what keys that split, never a channel name.
+_Avoid_: criteria, scorecard, formula.
+
+**Sources**:
+A Topic's resolved corpus members rendered as links in the Report's **Resources** column (and the Digest's member list): each `member_id` resolved against `corpus.json` to its corpus item, rendered as **Outlet → url**. Ids absent from the corpus are skipped silently, identically in the Report and the Digest.
+_Avoid_: references, citations, links (links is the rendering, not the concept), members (member_ids is the raw input; Sources is the resolved output).
+
 ### Sources
 
 **Source**:

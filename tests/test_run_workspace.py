@@ -29,6 +29,14 @@ def test_lineage_path_sits_at_run_root(tmp_run_dir: Path) -> None:
     assert workspace.lineage == workspace.path / "lineage.json"
 
 
+def test_report_path_sits_at_run_root(tmp_run_dir: Path) -> None:
+    # report.html is a top-level run artifact, alongside email_sent.html — the
+    # report subagent's sole output.
+    workspace = RunWorkspace.new_run(tmp_run_dir)
+
+    assert workspace.report == workspace.path / "report.html"
+
+
 def test_new_run_without_instagram_flag_does_not_create_instagram_dir(
     tmp_run_dir: Path,
 ) -> None:

@@ -9,6 +9,7 @@ Paths:
   - trending_topics.json            (clustering subagent output)
   - content_recommendations.json    (recommendations subagent output)
   - email_sent.html                 (archived rendered HTML)
+  - report.html                     (report subagent's per-channel idea Report)
   - errors.log                      (JSON-lines event log)
 
 Later slices add fields here (e.g. trending_topics.json), not new call sites.
@@ -107,6 +108,10 @@ class RunWorkspace:
     @property
     def email_sent(self) -> Path:
         return self.path / "email_sent.html"
+
+    @property
+    def report(self) -> Path:
+        return self.path / "report.html"
 
     @property
     def errors(self) -> Path:
