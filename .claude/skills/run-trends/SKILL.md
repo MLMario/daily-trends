@@ -92,7 +92,7 @@ Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (
 
    - **Otherwise:** continue to step 7 as normal.
 
-7. **Cluster.** Read `prompts/clustering_prompt.md` and the full contents of `runs/<run_id>/corpus.json`. Spawn **one** subagent (`subagent_type=general-purpose`, `model=sonnet`, fresh context). Its prompt is the clustering prompt, then the corpus JSON inlined verbatim, then two lines:
+7. **Cluster.** Read `prompts/clustering_prompt.md` and the full contents of `runs/<run_id>/corpus.json`. Spawn **one** subagent (`subagent_type=general-purpose`, `model=Opus 4.8`, fresh context). Its prompt is the clustering prompt, then the corpus JSON inlined verbatim, then two lines:
 
    ```
    Run ID: <run_id>
@@ -121,7 +121,7 @@ Skip the `transcribe` marker when `creators/accounts.json[instagram]` is empty (
 
    Clustering and recommendations are a strict dependency chain — run them sequentially, not in a single tool block.
 
-9. **Report (full-path only, non-fatal).** Skip this step entirely on a slow day (when `skipped_clustering.json` is present — clustering and recommendations never ran, so there is nothing to report and no `report.html` is written). Otherwise emit the `report` stage-boundary marker, then read `prompts/report_prompt.md`, `templates/report_template.html`, the full contents of `runs/<run_id>/trending_topics.json`, `runs/<run_id>/content_recommendations.json`, and `runs/<run_id>/corpus.json`, plus `content_channels` from `config.json`. Spawn **one** subagent (`subagent_type=general-purpose`, `model=sonnet`, fresh context). Its prompt is the report prompt, then the HTML template inlined verbatim, then the three JSON files inlined verbatim, then the channel list as plain prose and the run lines. For example:
+9. **Report (full-path only, non-fatal).** Skip this step entirely on a slow day (when `skipped_clustering.json` is present — clustering and recommendations never ran, so there is nothing to report and no `report.html` is written). Otherwise emit the `report` stage-boundary marker, then read `prompts/report_prompt.md`, `templates/report_template.html`, the full contents of `runs/<run_id>/trending_topics.json`, `runs/<run_id>/content_recommendations.json`, and `runs/<run_id>/corpus.json`, plus `content_channels` from `config.json`. Spawn **one** subagent (`subagent_type=general-purpose`, `model=Opus 4.8`, fresh context). Its prompt is the report prompt, then the HTML template inlined verbatim, then the three JSON files inlined verbatim, then the channel list as plain prose and the run lines. For example:
 
    ```
    Channels to render (in order): substack, linkedin, instagram
