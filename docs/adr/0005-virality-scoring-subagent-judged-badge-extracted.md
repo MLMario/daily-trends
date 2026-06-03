@@ -10,10 +10,11 @@ What **is** deterministic and reusable is extracted to a tested module, `scripts
 
 - the **LinkedIn rubric weights** (`LINKEDIN_RUBRIC`),
 - the **composite** = rounded weighted average of the sub-scores (`composite_score`),
-- the **color band** thresholds red ≤ 4 / amber 5–7 / green ≥ 8 (`band_for_score`),
-- the **badge HTML** — a self-contained, inline-CSS component (`render_badge`).
+- the **color band** thresholds red ≤ 4 / amber 5–7 / green ≥ 8 (`band_for_score`).
 
-The report prompt and template reference this module as the canonical source of the weights, bands, and badge markup; the subagent renders the badge from the template's copy of that markup. ADR-0004's option (b) (hand-computed-or-judged scores, HTML-direct) is chosen over option (a) (JSON scores + a renderer).
+The report prompt references this module as the canonical source of the weights and bands. ADR-0004's option (b) (hand-computed-or-judged scores, HTML-direct) is chosen over option (a) (JSON scores + a renderer).
+
+> **Update (master-detail redesign, 2026-06-03).** The original cut also extracted the **badge HTML** (`render_badge`) — a self-contained, inline-CSS component the template mirrored. The master-detail report template colors its scorebox and per-dimension sub-score meters via **CSS classes** keyed on the band (`scorebox green`, `meter amber`), so there is no inline-CSS component to render and no single contiguous blob to mirror — the band is the seam, not the markup. `render_badge` was retired; the rubric weights, the composite formula, and the band thresholds remain the extracted, tested seam.
 
 ## Context
 
@@ -32,9 +33,9 @@ Two shapes were again possible:
 
 ## Consequences
 
-- `scripts/lib/virality_badge.py` is the single source of truth for the LinkedIn rubric weights, the composite math, the color bands, and the badge HTML; `tests/test_virality_badge.py` pins them.
-- `prompts/report_prompt.md` carries the rubric's 1→10 anchor descriptions and instructs the subagent to score scored channels, render the badge, and sort scored sections by composite descending — keyed on **rubric presence**, not a channel name.
-- `templates/report_template.html` embeds the canonical badge markup as a reusable block and renders the Virality cell as either `—` (scoreless) or the badge (scored).
+- `scripts/lib/virality_badge.py` is the single source of truth for the LinkedIn rubric weights, the composite math, and the color bands; `tests/test_virality_badge.py` pins them. (The badge *markup* is no longer here — see the redesign note above.)
+- `prompts/report_prompt.md` carries the rubric's 1→10 anchor descriptions and instructs the subagent to score scored channels, render the banded scorebox + sub-score meters, and sort scored sections by composite descending — keyed on **rubric presence**, not a channel name.
+- `templates/report_template.html` defines the scorebox / meter / index-dot color as CSS classes keyed on the band; scored cards carry a composite scorebox + meters, scoreless cards an "Essay / unscored" scorebox.
 - Still **no** `report_scores.json` and **no** `ReportRenderer`; the subagent's sole artifact remains `runs/<run_id>/report.html`.
 - Adding the next scored channel (issue #40, `instagram`) reuses `virality_badge.py` and adds only its own rubric anchors to the prompt — no new rendering code.
 

@@ -1,26 +1,22 @@
 """Behavior tests for scripts.lib.virality_badge.
 
-The virality badge is the reusable, deterministic seam introduced with LinkedIn
-virality scoring (issue #39): it maps a 1-10 composite Virality score to a
-red->amber->green color band and renders a self-contained, inline-CSS badge with
-the five per-dimension sub-scores and a 2-sentence justification beneath it.
-Instagram (issue #40) reuses the same component, so the band thresholds and the
-rendered markup live here once, tested, rather than duplicated per channel.
+The Virality score is the reusable, deterministic seam introduced with LinkedIn
+virality scoring (issue #39): it maps a 1-10 composite to a red->amber->green
+color band, from a weighted average over a channel's rubric. Instagram (issue
+#40) reuses the same component, so the band thresholds and the weights live here
+once, tested, rather than duplicated per channel. The *markup* lives in the
+report template (class-based, keyed on the band these functions return); only the
+math is extracted here (ADR-0005).
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from scripts.lib.virality_badge import (
     INSTAGRAM_RUBRIC,
     LINKEDIN_RUBRIC,
     band_for_score,
     composite_score,
-    render_badge,
 )
-
-_TEMPLATE = Path(__file__).resolve().parents[1] / "templates" / "report_template.html"
 
 
 def test_low_composite_is_the_red_band() -> None:
@@ -36,71 +32,6 @@ def test_mid_composite_is_the_amber_band() -> None:
 def test_high_composite_is_the_green_band() -> None:
     assert band_for_score(8) == "green"
     assert band_for_score(10) == "green"
-
-
-SUBSCORES = {
-    "Hook Tension": 9,
-    "Opinion Sharpness": 8,
-    "Narrative Structure": 7,
-    "Niche Fit": 8,
-    "Saveability": 6,
-}
-
-
-def test_badge_shows_the_composite_score() -> None:
-    out = render_badge(
-        composite=8,
-        subscores=SUBSCORES,
-        justification="Strong, opinionated hook. Lands squarely in the niche.",
-    )
-    assert "8" in out
-
-
-def test_badge_carries_its_band_color_class() -> None:
-    red = render_badge(composite=3, subscores=SUBSCORES, justification="Weak. Flat.")
-    amber = render_badge(composite=6, subscores=SUBSCORES, justification="Okay. Middling.")
-    green = render_badge(composite=9, subscores=SUBSCORES, justification="Sharp. Saveable.")
-    assert "virality-badge--red" in red
-    assert "virality-badge--amber" in amber
-    assert "virality-badge--green" in green
-
-
-def test_badge_lists_every_dimension_and_its_subscore() -> None:
-    out = render_badge(
-        composite=8,
-        subscores=SUBSCORES,
-        justification="Strong. Lands.",
-    )
-    for dimension, value in SUBSCORES.items():
-        assert dimension in out
-        assert str(value) in out
-
-
-def test_badge_shows_the_justification() -> None:
-    out = render_badge(
-        composite=8,
-        subscores=SUBSCORES,
-        justification="The hook provokes. The niche fit is exact.",
-    )
-    assert "The hook provokes. The niche fit is exact." in out
-
-
-def test_badge_escapes_interpolated_justification() -> None:
-    out = render_badge(
-        composite=8,
-        subscores=SUBSCORES,
-        justification='A <script> & "quote" angle.',
-    )
-    assert "<script>" not in out
-    assert "&lt;script&gt;" in out
-
-
-def test_badge_is_self_contained_no_external_assets() -> None:
-    out = render_badge(composite=8, subscores=SUBSCORES, justification="X. Y.")
-    assert "http://" not in out
-    assert "https://" not in out
-    assert "<link" not in out
-    assert "<script" not in out
 
 
 def test_linkedin_rubric_weights_match_the_spec() -> None:
@@ -121,6 +52,15 @@ def test_instagram_rubric_weights_match_the_spec() -> None:
         "Universality of Premise": 0.10,
         "Audio / Trend Leverage": 0.10,
     }
+
+
+SUBSCORES = {
+    "Hook Tension": 9,
+    "Opinion Sharpness": 8,
+    "Narrative Structure": 7,
+    "Niche Fit": 8,
+    "Saveability": 6,
+}
 
 
 def test_composite_is_the_rounded_weighted_average_of_subscores() -> None:
@@ -154,12 +94,12 @@ def test_composite_rounds_half_up_at_a_tie() -> None:
 
 def test_instagram_rubric_weights_sum_to_one() -> None:
     # The composite is a weighted average; if the weights drifted off 1.0 the
-    # composite would no longer be on the 1-10 scale the badge bands assume.
+    # composite would no longer be on the 1-10 scale the bands assume.
     assert sum(INSTAGRAM_RUBRIC.values()) == 1.0
 
 
 def test_instagram_composite_is_the_rounded_weighted_average_of_subscores() -> None:
-    # `instagram` reuses the same `composite_score`/badge component as `linkedin`
+    # `instagram` reuses the same `composite_score`/bands as `linkedin`
     # (ADR-0005) — only the rubric differs. Score an IG Reel concept:
     # 9*.30 + 8*.25 + 7*.25 + 6*.10 + 5*.10 = 2.7+2.0+1.75+0.6+0.5 = 7.55 -> 8
     ig_subscores = {
@@ -185,44 +125,3 @@ def test_instagram_composite_rounds_half_up_at_a_tie() -> None:
     }
     assert composite_score(half_tie, INSTAGRAM_RUBRIC) == 5
     assert band_for_score(composite_score(half_tie, INSTAGRAM_RUBRIC)) == "amber"
-
-
-def test_instagram_reuses_the_same_badge_component() -> None:
-    # AC: the `instagram` Virality cell reuses the #39 badge component unchanged.
-    # The five IG sub-scores and justification render through the same
-    # `render_badge`, with no instagram-specific markup.
-    ig_subscores = {
-        "3-Second Hook": 9,
-        "Emotional Valence / Send-impulse": 8,
-        "Completability / Pacing": 7,
-        "Universality of Premise": 6,
-        "Audio / Trend Leverage": 5,
-    }
-    out = render_badge(
-        composite=8,
-        subscores=ig_subscores,
-        justification="A scroll-stopping first frame. The premise is universally relatable.",
-    )
-    assert "virality-badge--green" in out
-    for dimension, value in ig_subscores.items():
-        assert dimension in out
-        assert str(value) in out
-    assert "A scroll-stopping first frame. The premise is universally relatable." in out
-
-
-def test_template_embeds_the_canonical_render_badge_markup() -> None:
-    # ADR-0005: the template carries a fill-in copy of the badge markup while
-    # render_badge is canonical. They must not drift — assert the template
-    # embeds the exact markup render_badge produces for the example badge.
-    canonical = render_badge(
-        composite=8,
-        subscores={
-            "Hook Tension": 9,
-            "Opinion Sharpness": 8,
-            "Narrative Structure": 7,
-            "Niche Fit": 8,
-            "Saveability": 6,
-        },
-        justification="Two-sentence justification of the score. Second sentence.",
-    )
-    assert canonical in _TEMPLATE.read_text(encoding="utf-8")
