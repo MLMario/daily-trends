@@ -1,11 +1,19 @@
-"""The reusable Virality badge — score-to-color band + self-contained badge HTML.
+"""The Virality score math — the rubric weights, composite, and color band.
 
 Introduced with LinkedIn virality scoring (issue #39) and reused unchanged by
-Instagram (issue #40). A channel's Virality cell, once it has a rubric, renders a
-1-10 composite as a color-coded badge (red->amber->green) with the five
-per-dimension sub-scores and a 2-sentence justification beneath. The band
-thresholds and the inline-CSS markup live here once so both channels share one
-tested component rather than duplicating the bands in two report prompts.
+Instagram (issue #40). A channel's Virality cell, once it has a rubric, surfaces
+a 1-10 composite as a color-banded score (red->amber->green) with the five
+per-dimension sub-scores and a 2-sentence justification beside it. The weights
+and the band thresholds live here once so both channels share one tested seam
+rather than duplicating the bands in two report prompts.
+
+This module holds the *deterministic* fraction of the score — the weights, the
+composite formula, and the band thresholds. The **markup** is not here: the
+master-detail report (ADR-0004, HTML-direct) colors its scorebox and sub-score
+meters via CSS classes defined in `templates/report_template.html` (e.g.
+`scorebox green`, `meter amber`), keyed on the band this module computes. There
+is no inline-CSS badge component to render — the subagent authors the card HTML
+straight from the template, so the only thing worth extracting is the math.
 
 Bands (1-10 composite):
   1-4  -> red    (a weak bet)
@@ -15,7 +23,6 @@ Bands (1-10 composite):
 
 from __future__ import annotations
 
-import html
 import math
 
 # The LinkedIn rubric (issue #39): a weighted composite over five dimensions,
@@ -34,8 +41,7 @@ LINKEDIN_RUBRIC: dict[str, float] = {
 # tuned for short-form video — a Reel concept judged 1-10 from the Idea text +
 # Topic context (no Reel engagement metrics). The 1->10 anchor descriptions live
 # in prompts/report_prompt.md; the *weights* live here so `instagram` composites
-# are computed by the same `composite_score` as `linkedin`, reusing the badge
-# component unchanged (ADR-0005).
+# are computed by the same `composite_score` as `linkedin` (ADR-0005).
 INSTAGRAM_RUBRIC: dict[str, float] = {
     "3-Second Hook": 0.30,
     "Emotional Valence / Send-impulse": 0.25,
@@ -62,62 +68,14 @@ def composite_score(subscores: dict[str, int], rubric: dict[str, float]) -> int:
 
 
 def band_for_score(score: int) -> str:
-    """Map a 1-10 composite Virality score to its color band."""
+    """Map a 1-10 composite Virality score to its color band.
+
+    The same red/amber/green vocabulary names a CSS class in the report template:
+    a scorebox carries the *composite's* band, while each sub-score meter carries
+    *its own* band (so a 7 reads amber even inside an otherwise-green card).
+    """
     if score <= 4:
         return "red"
     if score <= 7:
         return "amber"
     return "green"
-
-
-# Inline-CSS colors per band — self-contained so the badge renders from disk
-# with no network, stylesheet, or font dependency (ADR-0004's constraint).
-# Editorial palette: oxblood / deep-ochre / forest, tuned to read as the page's
-# only color against the warm-paper Report and to carry warm-white text legibly.
-_BAND_BG = {"red": "#a8392b", "amber": "#946b1c", "green": "#356845"}
-
-
-def _esc(value: str) -> str:
-    return html.escape(value or "", quote=True)
-
-
-def render_badge(*, composite: int, subscores: dict[str, int], justification: str) -> str:
-    """Render the Virality badge: the color-coded composite, with the five
-    per-dimension sub-scores and the 2-sentence justification beneath it.
-
-    A reusable component (LinkedIn now, Instagram next): every scored channel's
-    Virality cell renders this exact markup, so the band thresholds and styling
-    live in one tested place. Self-contained inline CSS — no external assets.
-    """
-    band = band_for_score(composite)
-    bg = _BAND_BG[band]
-    badge = (
-        f'<span class="virality-badge virality-badge--{band}" '
-        f'style="display:inline-block;min-width:34px;padding:4px 11px;border-radius:3px;'
-        f'background:{bg};color:#fdfbf6;font-weight:700;font-size:13px;letter-spacing:0.04em;'
-        f'text-align:center;">'
-        f"{_esc(str(composite))}/10</span>"
-    )
-    sub_rows = "".join(
-        f'<li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;'
-        f'border-bottom:1px solid #e6dfd0;">'
-        f'<span style="color:#8a8275;">{_esc(dimension)}</span>'
-        f'<span style="color:#1c1a16;font-weight:600;">{_esc(str(value))}</span></li>'
-        for dimension, value in subscores.items()
-    )
-    subscores_block = (
-        f'<ul class="virality-subscores" '
-        f'style="list-style:none;margin:10px 0 0;padding:0;font-size:11px;line-height:1.5;">'
-        f"{sub_rows}</ul>"
-    )
-    justification_block = (
-        f'<p class="virality-justification" '
-        f'style="margin:10px 0 0;font-size:11.5px;font-family:Georgia,serif;font-style:italic;'
-        f'color:#5c5648;line-height:1.5;">'
-        f"{_esc(justification)}</p>"
-    )
-    return (
-        '<div class="virality-cell" style="vertical-align:top;">'
-        f"{badge}{subscores_block}{justification_block}"
-        "</div>"
-    )
