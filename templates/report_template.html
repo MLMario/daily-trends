@@ -1,305 +1,841 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>daily-trends — Report {{RUN_ID}}</title>
 <style>
-  /* ----------------------------------------------------------------------
-     daily-trends — Report. A self-contained editorial briefing: warm paper,
-     a serif masthead, and the page's ONLY color reserved for the Virality
-     badges so the signal reads at a glance. No external fonts/CSS/JS/network
-     — it must render correctly when opened straight from disk (ADR-0004).
-     System-font stacks only; Georgia carries the editorial voice.
-     ------------------------------------------------------------------- */
-  :root {
-    --paper:        #ece5d6;   /* desk */
-    --sheet:        #f7f3ea;   /* the page itself */
-    --ink:          #1c1a16;   /* warm near-black */
-    --muted:        #6f685b;   /* secondary text */
-    --faint:        #8a8275;   /* labels, captions */
-    --rule:         #ddd5c4;   /* hairlines */
-    --rule-strong:  #1c1a16;   /* masthead / section rules */
-    --link:         #1c1a16;
-    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
-    --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --mono:  "SFMono-Regular", ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+  /* ============================================================
+     daily-trends — REPORT · MASTER / DETAIL NAVIGATOR
+     A self-contained intelligence briefing: a sticky master Index
+     (one group per Channel) beside a column of detail briefs. The
+     page's only strong color is reserved for the Virality signal —
+     scorebox, sub-score meters, and index band dots — so the bet
+     reads at a glance. System fonts only. No JS. No network. It must
+     render correctly opened straight from disk — file:// safe — so
+     <style>, <details>, sticky nav, anchor links and media queries
+     all hold (ADR-0004). Georgia carries the editorial voice.
+     ============================================================ */
+
+  :root{
+    /* warm-neutral palette */
+    --ink:        #20201d;
+    --ink-soft:   #4a4843;
+    --ink-faint:  #74716a;
+    --paper:      #f6f3ec;
+    --paper-2:    #efeae0;
+    --card:       #fffdf8;
+    --line:       #ddd6c8;
+    --line-soft:  #e7e1d4;
+    --rule:       #c9c0ad;
+
+    /* signal colors — the only strong colors */
+    --red:   #a8392b;
+    --amber: #946b1c;
+    --green: #356845;
+
+    --red-wash:   #f4e6e2;
+    --amber-wash: #f3ebda;
+    --green-wash: #e3ecdf;
+
+    --shadow: 0 1px 2px rgba(40,34,20,.06), 0 8px 24px rgba(40,34,20,.05);
+
+    --serif: Georgia, "Times New Roman", Times, serif;
+    --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --mono:  ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
 
-  * { box-sizing: border-box; }
+  *{ box-sizing:border-box; }
 
-  body {
-    margin: 0;
-    padding: 40px 24px 64px;
-    background: var(--paper);
-    color: var(--ink);
-    font-family: var(--sans);
-    font-size: 14px;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-  }
+  html{ scroll-behavior:smooth; }
 
-  .sheet {
-    max-width: 1000px;
-    margin: 0 auto;
-    background: var(--sheet);
-    border: 1px solid var(--rule);
-    box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 24px 48px -28px rgba(28,26,22,0.45);
-    padding: 48px 52px 40px;
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
   }
 
-  /* ---- Masthead ---------------------------------------------------------- */
-  .masthead { border-bottom: 3px solid var(--rule-strong); padding-bottom: 20px; }
-  .masthead__eyebrow {
-    font-family: var(--sans);
-    font-size: 11px;
-    letter-spacing: 0.32em;
-    text-transform: uppercase;
-    color: var(--faint);
-    margin: 0 0 10px;
-  }
-  .masthead__title {
-    font-family: var(--serif);
-    font-weight: 700;
-    font-size: 46px;
-    line-height: 0.96;
-    letter-spacing: -0.015em;
-    margin: 0;
-  }
-  .masthead__row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px 24px;
-    margin-top: 14px;
-  }
-  .masthead__dek {
-    font-family: var(--serif);
-    font-style: italic;
-    font-size: 15px;
-    color: var(--muted);
-    margin: 0;
-    max-width: 60ch;
-  }
-  .masthead__run { font-family: var(--mono); font-size: 12px; color: var(--faint); white-space: nowrap; }
+  a{ color:inherit; }
 
-  /* ---- Legend (band key) ------------------------------------------------- */
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 18px;
-    margin: 18px 0 0;
-    padding: 12px 0 0;
-    font-family: var(--sans);
-    font-size: 11px;
-    letter-spacing: 0.03em;
-    color: var(--muted);
-  }
-  .legend__item { display: inline-flex; align-items: center; gap: 7px; }
-  .legend__dot { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
-  .legend__dot--red   { background: #a8392b; }
-  .legend__dot--amber { background: #946b1c; }
-  .legend__dot--green { background: #356845; }
+  /* offset anchor targets so sticky masthead doesn't cover headings */
+  .detail-card, .channel-detail, #top{ scroll-margin-top:24px; }
 
-  /* ---- Channel section --------------------------------------------------- */
-  .channel { margin-top: 44px; }
-  .channel__head {
-    display: flex;
-    align-items: baseline;
-    gap: 14px;
-    border-bottom: 1.5px solid var(--rule-strong);
-    padding-bottom: 8px;
+  /* ---------------------------------------------------------- MASTHEAD */
+  .masthead{
+    border-bottom:3px double var(--rule);
+    background:linear-gradient(180deg, var(--paper-2), var(--paper));
   }
-  .channel__name {
-    font-family: var(--serif);
-    font-weight: 700;
-    font-size: 26px;
-    letter-spacing: -0.01em;
-    text-transform: capitalize;
-    margin: 0;
+  .masthead-inner{
+    max-width:1320px;
+    margin:0 auto;
+    padding:26px 30px 20px;
   }
-  .channel__note {
-    font-family: var(--sans);
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--faint);
-    margin-left: auto;
-    white-space: nowrap;
+  .kicker{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px 20px;
+    font-family:var(--sans);
+    font-size:11.5px;
+    letter-spacing:.22em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    font-weight:600;
+  }
+  .kicker .edition{ color:var(--ink-soft); }
+  .masthead h1{
+    font-family:var(--serif);
+    font-weight:700;
+    font-size:clamp(34px, 5.4vw, 58px);
+    line-height:1.02;
+    letter-spacing:-.015em;
+    margin:.28em 0 .12em;
+  }
+  .masthead h1 .amp{ color:var(--ink-faint); font-style:italic; font-weight:400; }
+  .dek{
+    font-family:var(--serif);
+    font-style:italic;
+    font-size:clamp(15px,2.1vw,19px);
+    color:var(--ink-soft);
+    max-width:62ch;
+    margin:0;
   }
 
-  /* ---- Ideas table ------------------------------------------------------- */
-  .ideas { width: 100%; border-collapse: collapse; margin-top: 4px; }
-  .ideas thead th {
-    font-family: var(--sans);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--faint);
-    text-align: left;
-    padding: 14px 16px 8px;
-    border-bottom: 1px solid var(--rule);
+  /* legend strip */
+  .legend{
+    max-width:1320px;
+    margin:0 auto;
+    padding:0 30px 22px;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:10px 26px;
+    font-size:12.5px;
+    color:var(--ink-soft);
   }
-  .ideas tbody tr { border-bottom: 1px solid var(--rule); }
-  .ideas tbody tr:last-child { border-bottom: 0; }
-  .ideas td { padding: 18px 16px; vertical-align: top; }
-
-  .col-idea      { width: 50%; }
-  .col-resources { width: 24%; }
-  .col-virality  { width: 26%; }
-
-  .idea {
-    font-family: var(--serif);
-    font-size: 14.5px;
-    line-height: 1.6;
-    color: var(--ink);
+  .legend .lg-label{
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    font-size:10.5px;
+    font-weight:700;
+    color:var(--ink-faint);
   }
-
-  /* Resources: each {{RESOURCES}} link is auto-styled — emit bare <a href>. */
-  .resources { font-family: var(--sans); font-size: 12.5px; }
-  .resources a {
-    display: block;
-    color: var(--link);
-    text-decoration: none;
-    padding: 3px 0 3px 14px;
-    position: relative;
-    border-bottom: 1px dotted transparent;
-    line-height: 1.35;
+  .legend .lg-item{ display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+  .dot{
+    width:11px; height:11px; border-radius:50%;
+    display:inline-block; flex:none;
+    box-shadow:0 0 0 1px rgba(0,0,0,.06) inset;
   }
-  .resources a::before {
-    content: "\2197";              /* ↗ */
-    position: absolute;
-    left: 0;
-    color: var(--faint);
-    font-size: 11px;
-  }
-  .resources a:hover { border-bottom-color: var(--rule-strong); }
+  .dot.red{ background:var(--red); }
+  .dot.amber{ background:var(--amber); }
+  .dot.green{ background:var(--green); }
+  .dot.none{ background:transparent; border:1.5px dashed var(--rule); box-shadow:none; }
 
-  /* Virality cell. Scoreless channels render the em-dash; scored channels
-     render the reusable badge block (see comment below). */
-  .dash { color: var(--faint); font-size: 20px; font-family: var(--serif); }
-
-  /* ---- Footer ------------------------------------------------------------ */
-  .colophon {
-    margin-top: 48px;
-    padding-top: 16px;
-    border-top: 1px solid var(--rule);
-    font-family: var(--sans);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    color: var(--faint);
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
+  /* ---------------------------------------------------------- LAYOUT */
+  .shell{
+    max-width:1320px;
+    margin:0 auto;
+    padding:0 30px 80px;
+    display:grid;
+    grid-template-columns:360px minmax(0,1fr);
+    gap:40px;
+    align-items:start;
   }
 
-  @media (max-width: 720px) {
-    .sheet { padding: 28px 20px; }
-    .masthead__title { font-size: 34px; }
-    .ideas td { padding: 14px 8px; }
+  /* ---------------------------------------------------------- INDEX (master) */
+  .index{
+    position:sticky;
+    top:18px;
+    align-self:start;
+    max-height:calc(100vh - 36px);
+    overflow:auto;
+    padding:22px 4px 22px 0;
+    border-right:1px solid var(--line);
+  }
+  .index::-webkit-scrollbar{ width:9px; }
+  .index::-webkit-scrollbar-thumb{ background:var(--rule); border-radius:9px; }
+  .index::-webkit-scrollbar-track{ background:transparent; }
+
+  .index-head{
+    font-family:var(--sans);
+    text-transform:uppercase;
+    letter-spacing:.18em;
+    font-size:10.5px;
+    font-weight:700;
+    color:var(--ink-faint);
+    margin:0 0 4px 14px;
+  }
+  .index-sub{
+    font-family:var(--serif);
+    font-style:italic;
+    font-size:13px;
+    color:var(--ink-faint);
+    margin:0 0 16px 14px;
   }
 
-  @media print {
-    body { background: #fff; padding: 0; }
-    .sheet { box-shadow: none; border: 0; max-width: none; padding: 0; }
-    .resources a { color: #000; }
+  .idx-group{ margin-bottom:18px; }
+  .idx-group-head{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:7px 14px 6px;
+    margin-bottom:2px;
+    border-bottom:1.5px solid var(--rule);
+  }
+  .idx-group-head .gname{
+    font-family:var(--sans);
+    font-weight:700;
+    font-size:12px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--ink);
+  }
+  .idx-group-head .gmeta{
+    margin-left:auto;
+    font-family:var(--mono);
+    font-size:10.5px;
+    color:var(--ink-faint);
+    letter-spacing:.02em;
+  }
+
+  ol.idx-list{ list-style:none; margin:0; padding:0; }
+
+  a.idx-row{
+    display:grid;
+    grid-template-columns:auto 1fr auto;
+    align-items:start;
+    gap:9px;
+    padding:7px 12px 8px 14px;
+    text-decoration:none;
+    border-radius:6px;
+    border-left:3px solid transparent;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  a.idx-row:hover{ background:var(--paper-2); }
+  a.idx-row:hover .row-headline{ color:var(--ink); }
+  a.idx-row:focus-visible{ outline:2px solid var(--ink); outline-offset:1px; }
+  a.idx-row.lead{ border-left-color:var(--rule); }
+
+  .row-dot{ margin-top:5px; }
+  .row-body{ min-width:0; }
+  .row-headline{
+    font-family:var(--serif);
+    font-size:14px;
+    line-height:1.34;
+    color:var(--ink-soft);
+    display:block;
+  }
+  .row-tag{
+    display:block;
+    font-family:var(--sans);
+    font-size:10px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    margin-top:2px;
+  }
+  .row-score{
+    font-family:var(--mono);
+    font-size:13px;
+    font-weight:600;
+    line-height:1;
+    margin-top:3px;
+    padding:3px 6px;
+    border-radius:5px;
+    min-width:26px;
+    text-align:center;
+  }
+  .row-score.red{   color:var(--red);   background:var(--red-wash); }
+  .row-score.amber{ color:var(--amber); background:var(--amber-wash); }
+  .row-score.green{ color:var(--green); background:var(--green-wash); }
+  .row-score.none{
+    color:var(--ink-faint); background:transparent;
+    font-family:var(--serif); font-style:italic; font-weight:400; font-size:11px;
+    padding:3px 4px;
+  }
+
+  /* ---------------------------------------------------------- DETAIL */
+  .detail{ padding-top:22px; min-width:0; }
+
+  .section-banner{
+    display:flex;
+    align-items:baseline;
+    gap:14px;
+    flex-wrap:wrap;
+    margin:46px 0 22px;
+    padding-bottom:10px;
+    border-bottom:2px solid var(--ink);
+  }
+  .detail > .section-banner:first-child{ margin-top:0; }
+  .section-banner h2{
+    font-family:var(--serif);
+    font-size:clamp(22px,3vw,30px);
+    font-weight:700;
+    letter-spacing:-.01em;
+    margin:0;
+  }
+  .section-banner .sb-note{
+    font-family:var(--serif);
+    font-style:italic;
+    color:var(--ink-faint);
+    font-size:14px;
+  }
+  .section-banner .sb-count{
+    margin-left:auto;
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.04em;
+    color:var(--ink-faint);
+    align-self:center;
+  }
+
+  .detail-card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:12px;
+    box-shadow:var(--shadow);
+    padding:24px 26px 22px;
+    margin-bottom:22px;
+  }
+
+  .card-top{
+    display:flex;
+    align-items:flex-start;
+    gap:16px;
+    margin-bottom:6px;
+  }
+  .card-top .ct-text{ min-width:0; flex:1; }
+
+  .card-eyebrow{
+    font-family:var(--sans);
+    font-size:10.5px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    font-weight:700;
+    margin-bottom:6px;
+    display:flex;
+    align-items:center;
+    gap:9px;
+    flex-wrap:wrap;
+  }
+  .card-eyebrow .rank{
+    font-family:var(--mono);
+    background:var(--ink);
+    color:var(--paper);
+    border-radius:4px;
+    padding:2px 6px;
+    letter-spacing:.04em;
+  }
+  .card-title{
+    font-family:var(--serif);
+    font-weight:700;
+    font-size:21px;
+    line-height:1.22;
+    letter-spacing:-.008em;
+    margin:0 0 2px;
+  }
+  .card-desc{
+    font-size:13.5px;
+    color:var(--ink-soft);
+    margin:8px 0 0;
+    line-height:1.5;
+  }
+
+  /* score badge (big) */
+  .scorebox{
+    flex:none;
+    width:74px;
+    text-align:center;
+    border-radius:10px;
+    padding:9px 4px 7px;
+    border:1px solid var(--line);
+  }
+  .scorebox.red{   background:var(--red-wash);   border-color:#e7c9c1; }
+  .scorebox.amber{ background:var(--amber-wash); border-color:#e7d6ad; }
+  .scorebox.green{ background:var(--green-wash); border-color:#bcd0bf; }
+  .scorebox .sv{
+    font-family:var(--serif);
+    font-weight:700;
+    font-size:30px;
+    line-height:1;
+    display:block;
+  }
+  .scorebox.red .sv{ color:var(--red); }
+  .scorebox.amber .sv{ color:var(--amber); }
+  .scorebox.green .sv{ color:var(--green); }
+  .scorebox .sl{
+    font-family:var(--sans);
+    font-size:9px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    display:block;
+    margin-top:4px;
+  }
+  .scorebox .band{
+    font-family:var(--sans);
+    font-size:9.5px;
+    font-weight:700;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    display:block;
+    margin-top:3px;
+  }
+  .scorebox.red .band{ color:var(--red); }
+  .scorebox.amber .band{ color:var(--amber); }
+  .scorebox.green .band{ color:var(--green); }
+
+  .scorebox.noscore{ background:var(--paper-2); border-style:dashed; border-color:var(--rule); }
+  .scorebox.noscore .sv{ color:var(--ink-faint); font-style:italic; font-size:17px; padding:6px 0 4px; }
+
+  /* idea block */
+  .idea-label{
+    font-family:var(--sans);
+    font-size:10.5px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    font-weight:700;
+    color:var(--ink-faint);
+    margin:18px 0 7px;
+    padding-top:14px;
+    border-top:1px solid var(--line-soft);
+  }
+  .idea{
+    font-family:var(--serif);
+    font-size:15.5px;
+    line-height:1.62;
+    color:var(--ink);
+    margin:0;
+  }
+
+  /* sub-scores */
+  .subs{
+    margin:18px 0 0;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:7px 22px;
+  }
+  .sub{
+    display:grid;
+    grid-template-columns:1fr auto;
+    align-items:center;
+    gap:8px;
+    font-size:12.5px;
+  }
+  .sub .sub-name{ color:var(--ink-soft); }
+  .sub .meter{
+    grid-column:1 / -1;
+    height:5px;
+    border-radius:3px;
+    background:var(--paper-2);
+    overflow:hidden;
+  }
+  .sub .meter > span{ display:block; height:100%; border-radius:3px; }
+  .sub .sub-val{
+    font-family:var(--mono);
+    font-size:12px;
+    font-weight:600;
+    color:var(--ink-soft);
+  }
+  .meter.red   > span{ background:var(--red); }
+  .meter.amber > span{ background:var(--amber); }
+  .meter.green > span{ background:var(--green); }
+
+  /* justification */
+  details.just{
+    margin-top:16px;
+    border-top:1px solid var(--line-soft);
+    padding-top:4px;
+  }
+  details.just > summary{
+    cursor:pointer;
+    list-style:none;
+    font-family:var(--sans);
+    font-size:11px;
+    letter-spacing:.13em;
+    text-transform:uppercase;
+    font-weight:700;
+    color:var(--ink-faint);
+    padding:10px 0 6px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    user-select:none;
+  }
+  details.just > summary::-webkit-details-marker{ display:none; }
+  details.just > summary::before{
+    content:"\25B8";
+    font-size:12px;
+    transition:transform .15s ease;
+    color:var(--rule);
+  }
+  details.just[open] > summary::before{ transform:rotate(90deg); }
+  details.just > summary:hover{ color:var(--ink); }
+  .just-body{
+    font-family:var(--serif);
+    font-style:italic;
+    font-size:13.5px;
+    line-height:1.6;
+    color:var(--ink-soft);
+    margin:2px 0 8px;
+    padding-left:20px;
+    border-left:2px solid var(--line);
+  }
+
+  /* resources */
+  .resources{
+    margin-top:16px;
+    padding-top:13px;
+    border-top:1px solid var(--line-soft);
+  }
+  .res-label{
+    font-family:var(--sans);
+    font-size:10.5px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    font-weight:700;
+    color:var(--ink-faint);
+    margin-bottom:8px;
+  }
+  .res-list{ display:flex; flex-wrap:wrap; gap:8px 10px; }
+  .res-list a{
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    text-decoration:none;
+    font-size:12.5px;
+    color:var(--ink-soft);
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:4px 12px 4px 11px;
+    transition:border-color .12s, color .12s, background .12s;
+  }
+  .res-list a:hover{ color:var(--ink); border-color:var(--ink-faint); background:var(--card); }
+  .res-list a::before{ content:"\2197"; color:var(--ink-faint); font-size:12px; }
+  .res-list a.creator{ font-family:var(--mono); font-size:11.5px; }
+  .res-list a.creator::before{ content:"\25C8"; }
+
+  /* back-to-index link inside cards (desktop hidden, mobile shown) */
+  .toindex{
+    display:none;
+    font-family:var(--sans);
+    font-size:11px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    text-decoration:none;
+    margin-top:14px;
+  }
+  .toindex::before{ content:"\2191 "; }
+
+  /* topic-context (scoreless channels) */
+  .topic-summary{
+    font-family:var(--serif);
+    font-size:13.5px;
+    line-height:1.6;
+    color:var(--ink-soft);
+    margin:10px 0 0;
+    padding-left:16px;
+    border-left:3px solid var(--line);
+  }
+
+  /* ---------------------------------------------------------- FAB jump-to-top (mobile) */
+  .jumptop{
+    display:none;
+    position:fixed;
+    right:16px;
+    bottom:16px;
+    z-index:50;
+    background:var(--ink);
+    color:var(--paper);
+    text-decoration:none;
+    font-family:var(--sans);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    padding:11px 15px;
+    border-radius:30px;
+    box-shadow:0 6px 20px rgba(0,0,0,.28);
+  }
+  .jumptop::before{ content:"\2191 "; }
+
+  footer.colophon{
+    max-width:1320px;
+    margin:0 auto;
+    padding:30px;
+    border-top:3px double var(--rule);
+    font-family:var(--serif);
+    font-style:italic;
+    font-size:13px;
+    color:var(--ink-faint);
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+
+  /* ---------------------------------------------------------- RESPONSIVE */
+  @media (max-width:900px){
+    .shell{
+      grid-template-columns:1fr;
+      gap:0;
+      padding-bottom:96px;
+    }
+    .index{
+      position:static;
+      max-height:none;
+      overflow:visible;
+      border-right:none;
+      border-bottom:2px solid var(--rule);
+      padding:18px 0 8px;
+      margin-bottom:8px;
+    }
+    .detail{ padding-top:8px; }
+    .toindex{ display:inline-block; }
+    .jumptop{ display:block; }
+    .subs{ grid-template-columns:1fr; }
+  }
+
+  @media (max-width:560px){
+    body{ font-size:15px; }
+    .masthead-inner{ padding:20px 18px 16px; }
+    .legend{ padding:0 18px 18px; }
+    .shell{ padding-left:18px; padding-right:18px; }
+    .detail-card{ padding:18px 16px 16px; }
+    .card-top{ gap:11px; }
+    .scorebox{ width:60px; }
+    .scorebox .sv{ font-size:25px; }
+  }
+
+  /* ---------------------------------------------------------- PRINT */
+  @media print{
+    :root{ --shadow:none; }
+    html{ scroll-behavior:auto; }
+    body{ background:#fff; color:#000; font-size:11pt; }
+    .jumptop, .toindex{ display:none !important; }
+    .masthead{ background:#fff; }
+    .shell{
+      display:block;
+      max-width:none;
+      padding:0;
+    }
+    .index{
+      position:static;
+      max-height:none;
+      overflow:visible;
+      border:none;
+      page-break-after:always;
+      padding:0;
+    }
+    a.idx-row{ break-inside:avoid; }
+    .detail{ padding-top:0; }
+    .detail-card{
+      border:1px solid #bbb;
+      box-shadow:none;
+      break-inside:avoid;
+      page-break-inside:avoid;
+    }
+    details.just[open] .just-body, details.just .just-body{ display:block; }
+    a{ color:#000; text-decoration:none; }
+    .res-list a{ border-color:#bbb; }
+    .section-banner{ break-after:avoid; }
   }
 </style>
 </head>
 <body>
-<div class="sheet">
+<a id="top"></a>
 
-  <!-- ===================== MASTHEAD (render once) ===================== -->
-  <header class="masthead">
-    <p class="masthead__eyebrow">daily-trends &middot; dispatch</p>
-    <h1 class="masthead__title">The Report</h1>
-    <div class="masthead__row">
-      <p class="masthead__dek">Today's signal, transposed by channel &mdash; your best bets up top.</p>
-      <span class="masthead__run">Run {{RUN_ID}}</span>
+<!--
+  ============================ HOW TO FILL THIS TEMPLATE ============================
+  This is a MASTER / DETAIL navigator. The page has two synchronized halves:
+
+    • the INDEX (master)  — a sticky left rail, ONE .idx-group per Channel, each a
+                            list of anchor links (band dot + headline + topic tag +
+                            score) that jump to the matching detail card.
+    • the DETAIL (column) — ONE .section-banner + a stack of .detail-card briefs per
+                            Channel, in the SAME Channel order as the index.
+
+  CHANNEL ORDER is DATA-DRIVEN: render exactly the Channels you are given, in the
+  given order (the operator's content_channels) — never hardcode a channel name.
+  Every Channel appears in BOTH halves, in the same order.
+
+  SCORED vs SCORELESS is keyed on RUBRIC PRESENCE, never a channel name:
+    • a Channel WITH a rubric  → SCORED: cards carry a composite scorebox, five
+      sub-score meters, and a justification; the section is sorted by composite
+      DESCENDING (best bet first); index rows show a colored band dot + numeric
+      score; idea noun is "The post".
+    • a Channel WITHOUT a rubric → SCORELESS: cards carry a "Essay / unscored"
+      scorebox, a topic-summary, no meters, no justification; the section stays in
+      TOPIC order; index rows show a hollow .dot.none + the word "essay"; idea noun
+      is "The essay".
+
+  COLOR BANDS (red ≤4 · amber 5–7 · green ≥8) map to CSS classes. Apply the band as
+  a class — never inline color. Two distinct uses of the band:
+    • the SCOREBOX takes the COMPOSITE's band (.scorebox green + .band "Green").
+    • each METER takes ITS OWN sub-score's band (a 7 reads .meter amber even inside
+      an otherwise-green card) and its bar width is sub-score × 10% (7 → 70%,
+      9 → 90%, 10 → 100%).
+    • each INDEX row's .dot and .row-score take the COMPOSITE's band.
+
+  ANCHORS: give every card a page-unique id and point its index row at it. Convention:
+  "<channel-slug>-<topic-slug>" (e.g. id="linkedin-anthropic-funding",
+  href="#linkedin-anthropic-funding"). Scored sections are reordered by composite, so
+  slugify from the topic, not the rank.
+
+  ESCAPE every interpolated value so the HTML stays valid. Self-contained only — no
+  external CSS/JS/fonts/network.
+  ==================================================================================
+-->
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="kicker">
+      <span>daily-trends &middot; AI intelligence briefing</span>
+      <!-- {{EDITION}} — the run's date + time, e.g. "Edition — 30 May 2026 · 04:01 UTC" (derive from the run id/timestamp). -->
+      <span class="edition">{{EDITION}}</span>
     </div>
-    <div class="legend">
-      <span class="legend__item"><span class="legend__dot legend__dot--green"></span>Best bet (8&ndash;10)</span>
-      <span class="legend__item"><span class="legend__dot legend__dot--amber"></span>Contender (5&ndash;7)</span>
-      <span class="legend__item"><span class="legend__dot legend__dot--red"></span>Weak (1&ndash;4)</span>
+    <h1>The Signal <span class="amp">&amp;</span> The Spread</h1>
+    <p class="dek">Today's stories, transposed by channel and scored for spread &mdash; scan the index, jump to the brief.</p>
+  </div>
+  <div class="legend">
+    <span class="lg-label">Virality band</span>
+    <span class="lg-item"><span class="dot green"></span> Strong &middot; 8&ndash;10</span>
+    <span class="lg-item"><span class="dot amber"></span> Mixed &middot; 5&ndash;7</span>
+    <span class="lg-item"><span class="dot red"></span> Weak &middot; &le;4</span>
+    <span class="lg-item"><span class="dot none"></span> Unscored</span>
+    <!-- {{LEGEND_SUMMARY}} — the run tally, e.g. "33 ideas · 11 topics · 3 channels". -->
+    <span class="lg-item" style="font-family:var(--serif);font-style:italic;color:var(--ink-faint)">{{LEGEND_SUMMARY}}</span>
+  </div>
+</header>
+
+<div class="shell">
+
+  <!-- ======================================================= INDEX / MASTER -->
+  <nav class="index" aria-label="Idea index">
+    <p class="index-head">Index &mdash; jump to a brief</p>
+    <p class="index-sub">Best bets first within each scored channel.</p>
+
+    <!-- BEGIN index group (repeat per Channel, in content_channels order) -->
+    <section class="idx-group">
+      <div class="idx-group-head">
+        <!-- {{CHANNEL_NAME}} display name · {{GROUP_META}} = "N · scored" (scored) or "N · essays" (scoreless) -->
+        <span class="gname">{{CHANNEL_NAME}}</span>
+        <span class="gmeta">{{GROUP_META}}</span>
+      </div>
+      <ol class="idx-list">
+        <!-- BEGIN index row (repeat per Topic; SAME order as this channel's detail cards).
+             SCORED row:    <span class="dot {{BAND}} row-dot"></span> ... <span class="row-score {{BAND}}">{{COMPOSITE}}</span>
+             SCORELESS row: <span class="dot none row-dot"></span>    ... <span class="row-score none">essay</span>
+             {{BAND}} here is the COMPOSITE's band (red|amber|green). {{ANCHOR}} = the card's id. -->
+        <li><a class="idx-row" href="#{{ANCHOR}}">
+          <span class="dot {{BAND}} row-dot"></span>
+          <span class="row-body"><span class="row-headline">{{HEADLINE}}</span><span class="row-tag">{{TOPIC_NAME}}</span></span>
+          <span class="row-score {{BAND}}">{{COMPOSITE}}</span></a></li>
+        <!-- END index row -->
+      </ol>
+    </section>
+    <!-- END index group -->
+
+  </nav>
+
+  <!-- ======================================================= DETAIL -->
+  <main class="detail">
+
+    <!-- BEGIN channel section (repeat per Channel, in content_channels order) -->
+    <div class="section-banner" id="sec-{{CHANNEL_SLUG}}">
+      <h2>{{CHANNEL_NAME}}</h2>
+      <!-- {{CHANNEL_NOTE}}: scored → "scored · best bets first"; scoreless → "long-form · unscored · in topic order" -->
+      <span class="sb-note">{{CHANNEL_NOTE}}</span>
+      <span class="sb-count">{{IDEA_COUNT}} ideas</span>
     </div>
-  </header>
 
-  <!--
-    ===================== CHANNEL SECTIONS =====================
-    Render ONE <section class="channel"> per configured Channel, in the order
-    the Channel list is given (data-driven — no hardcoded channel names). Inside
-    each, repeat one <tr> per Topic.
+    <!--
+      Use the SCORED card for a Channel that has a rubric, the SCORELESS card for one
+      that does not. Emit only the matching card shape; the other is reference only.
+    -->
 
-    channel__note (top-right caption) — set it to:
-      * "In topic order"     for a scoreless channel (no rubric, e.g. substack)
-      * "Best bets first"    for a scored channel (has a rubric, e.g. linkedin)
+    <!-- ===== SCORED card (repeat per Topic, composite DESCENDING) ===== -->
+    <article class="detail-card" id="{{ANCHOR}}">
+      <div class="card-top">
+        <div class="ct-text">
+          <!-- {{RANK}} = 1-based position in this scored section. {{TOPIC_NAME}} = the topic. -->
+          <div class="card-eyebrow"><span class="rank">#{{RANK}}</span> {{TOPIC_NAME}}</div>
+          <!-- {{HEADLINE}} = a short, punchy headline authored from the Idea's hook —
+               DISTINCT from {{TOPIC_NAME}} (which is already in the eyebrow) and from
+               the long Idea body below. {{DESCRIPTION}} ← the topic's `description`. -->
+          <h3 class="card-title">{{HEADLINE}}</h3>
+          <p class="card-desc">{{DESCRIPTION}}</p>
+        </div>
+        <!-- {{BAND}} = the COMPOSITE's band (red|amber|green). {{COMPOSITE}} = 1–10.
+             {{BAND_LABEL}} = "Red" | "Amber" | "Green" (Title case). -->
+        <div class="scorebox {{BAND}}"><span class="sv">{{COMPOSITE}}</span><span class="sl">composite</span><span class="band">{{BAND_LABEL}}</span></div>
+      </div>
+      <div class="idea-label">The post</div>
+      <!-- {{IDEA}} ← the recommendation's ideas[<channel>] text for this topic. -->
+      <p class="idea">{{IDEA}}</p>
+      <div class="subs">
+        <!-- BEGIN sub-score (one per rubric dimension, in rubric order).
+             {{SUB_BAND}} = THIS sub-score's own band (a 7 → amber). {{SUB_VAL}} = 1–10.
+             {{SUB_PCT}} = sub-score × 10 (7 → 70, 9 → 90, 10 → 100). -->
+        <div class="sub"><span class="sub-name">{{DIMENSION}}</span><span class="sub-val">{{SUB_VAL}}</span><span class="meter {{SUB_BAND}}"><span style="width:{{SUB_PCT}}%"></span></span></div>
+        <!-- END sub-score -->
+      </div>
+      <!-- {{JUSTIFICATION}} = the 2-sentence justification of the composite. -->
+      <details class="just"><summary>Why it scores</summary><p class="just-body">{{JUSTIFICATION}}</p></details>
+      <div class="resources"><div class="res-label">Resources</div><div class="res-list">
+        <!-- one bare <a href="url">Outlet</a> per resolved Source (member_id → corpus item:
+             text = account_or_outlet, href = url). Add class="creator" for a social handle
+             (e.g. an @-handle / instagram account) — it gets the ◈ marker + mono font.
+             Ids absent from the corpus are skipped silently; if none resolve, leave empty. -->
+        {{RESOURCES}}
+      </div></div>
+      <a class="toindex" href="#top">Back to index</a>
+    </article>
+    <!-- ===== END SCORED card ===== -->
 
-    Resources cell — emit one bare <a href="url">Outlet</a> per resolved Source
-    (member_id -> corpus item: text = account_or_outlet, href = url). The ↗ marker
-    and block layout are styled automatically; do NOT add inline styles. Ids
-    absent from the corpus are skipped silently; if none resolve, leave it empty.
+    <!-- ===== SCORELESS card (repeat per Topic, TOPIC order) ===== -->
+    <article class="detail-card" id="{{ANCHOR}}">
+      <div class="card-top">
+        <div class="ct-text">
+          <!-- {{TOPIC_LABEL}} = "Topic NN · <topic name>" (NN = 1-based topic position). -->
+          <div class="card-eyebrow">{{TOPIC_LABEL}}</div>
+          <h3 class="card-title">{{HEADLINE}}</h3>
+          <p class="card-desc">{{DESCRIPTION}}</p>
+          <!-- {{TOPIC_SUMMARY}} ← the topic's `conversation_summary`. -->
+          <p class="topic-summary">{{TOPIC_SUMMARY}}</p>
+        </div>
+        <div class="scorebox noscore"><span class="sv">Essay</span><span class="sl">unscored</span></div>
+      </div>
+      <div class="idea-label">The essay</div>
+      <p class="idea">{{IDEA}}</p>
+      <div class="resources"><div class="res-label">Resources</div><div class="res-list">
+        {{RESOURCES}}
+      </div></div>
+      <a class="toindex" href="#top">Back to index</a>
+    </article>
+    <!-- ===== END SCORELESS card ===== -->
 
-    Virality cell — keyed on whether the Channel has a rubric:
-      * Scoreless channel: <span class="dash">&mdash;</span>, section stays in Topic order.
-      * Scored channel: the reusable VIRALITY BADGE below — the 1-10 composite as a
-        color-coded badge (red <=4, amber 5-7, green >=8) with the five sub-scores
-        and the 2-sentence justification beneath. A scored section is sorted by
-        composite DESCENDING (best bet at the top), not Topic order.
-  -->
+    <!-- END channel section -->
 
-  <!--
-    REUSABLE VIRALITY BADGE (scored channels only). Drop this whole block into a
-    scored channel's Virality cell, swapping: the band modifier class
-    "virality-badge--{red|amber|green}" and its matching background color
-    (red #a8392b, amber #946b1c, green #356845), the composite "N/10", each
-    sub-score value, and the 2-sentence justification. Self-contained inline CSS
-    — no external assets. (Canonical markup: scripts/lib/virality_badge.py.)
-
-    <div class="virality-cell" style="vertical-align:top;"><span class="virality-badge virality-badge--green" style="display:inline-block;min-width:34px;padding:4px 11px;border-radius:3px;background:#356845;color:#fdfbf6;font-weight:700;font-size:13px;letter-spacing:0.04em;text-align:center;">8/10</span><ul class="virality-subscores" style="list-style:none;margin:10px 0 0;padding:0;font-size:11px;line-height:1.5;"><li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #e6dfd0;"><span style="color:#8a8275;">Hook Tension</span><span style="color:#1c1a16;font-weight:600;">9</span></li><li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #e6dfd0;"><span style="color:#8a8275;">Opinion Sharpness</span><span style="color:#1c1a16;font-weight:600;">8</span></li><li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #e6dfd0;"><span style="color:#8a8275;">Narrative Structure</span><span style="color:#1c1a16;font-weight:600;">7</span></li><li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #e6dfd0;"><span style="color:#8a8275;">Niche Fit</span><span style="color:#1c1a16;font-weight:600;">8</span></li><li style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #e6dfd0;"><span style="color:#8a8275;">Saveability</span><span style="color:#1c1a16;font-weight:600;">6</span></li></ul><p class="virality-justification" style="margin:10px 0 0;font-size:11.5px;font-family:Georgia,serif;font-style:italic;color:#5c5648;line-height:1.5;">Two-sentence justification of the score. Second sentence.</p></div>
-  -->
-
-  <!-- BEGIN channel section (repeat per channel) -->
-  <section class="channel">
-    <div class="channel__head">
-      <h2 class="channel__name">{{CHANNEL_NAME}}</h2>
-      <span class="channel__note">{{CHANNEL_NOTE}}</span>
-    </div>
-    <table class="ideas">
-      <thead>
-        <tr>
-          <th class="col-idea">Idea</th>
-          <th class="col-resources">Resources</th>
-          <th class="col-virality">Virality</th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- BEGIN topic row (repeat per topic; Topic order for a scoreless
-             channel, composite-descending for a scored channel) -->
-        <tr>
-          <td class="col-idea"><div class="idea">{{IDEA}}</div></td>
-          <td class="col-resources">
-            <div class="resources">
-              <!-- one bare <a href="url">Outlet</a> per resolved Source -->
-              {{RESOURCES}}
-            </div>
-          </td>
-          <!-- Scoreless: <span class="dash">&mdash;</span>. Scored: the badge block above. -->
-          <td class="col-virality">{{VIRALITY}}</td>
-        </tr>
-        <!-- END topic row -->
-      </tbody>
-    </table>
-  </section>
-  <!-- END channel section -->
-
-  <footer class="colophon">
-    <span>daily-trends &middot; the Report</span>
-    <span>Run {{RUN_ID}}</span>
-  </footer>
-
+  </main>
 </div>
+
+<a class="jumptop" href="#top">Index</a>
+
+<footer class="colophon">
+  <!-- {{FOOTER_SUMMARY}} = the run tally, e.g. "33 ideas across 11 topics · Scored: LinkedIn, Instagram · Unscored: Substack". -->
+  <span>daily-trends &middot; the Report &middot; Run {{RUN_ID}}</span>
+  <span>{{FOOTER_SUMMARY}}</span>
+</footer>
+
 </body>
 </html>
