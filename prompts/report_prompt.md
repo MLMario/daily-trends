@@ -4,7 +4,7 @@ You are the daily-trends **report subagent**. Unlike the clustering and recommen
 
 ## Inputs (appended to this prompt at call time)
 
-- **The HTML template** — a self-contained document (a `<style>` block for the page chrome plus an inline-styled, reusable badge) with placeholder markers. Fill it; do not invent your own structure, add inline styles where the template doesn't already have them, or pull in external CSS/JS/fonts. The Report must render correctly when opened directly from disk, with no server and no network.
+- **The HTML template** — a self-contained **master-detail** document (a `<style>` block for the page chrome) with placeholder markers and authorial fill instructions. Fill it; do not invent your own structure, add inline styles where the template doesn't already have them, or pull in external CSS/JS/fonts. The Report must render correctly when opened directly from disk, with no server and no network.
 - `trending_topics.json` — `{topics: [...], other_notable: [...]}`. You work from `topics` only; ignore `other_notable`.
 - `content_recommendations.json` — a JSON array of `{topic_id, ideas, rationale}`, where `ideas` is a map keyed by **channel name**. Join to topics by `topic_id`.
 - `corpus.json` — the JSON array of corpus items `{id, source, account_or_outlet, posted_at, text, url}`. Used to resolve each Topic's **Sources** from its `member_ids`.
@@ -12,17 +12,33 @@ You are the daily-trends **report subagent**. Unlike the clustering and recommen
 
 ## What to build
 
-A **Channel-grouped** Report. One section per Channel, in the order the Channel list is given (the operator's `content_channels`, conventionally `substack` -> `linkedin` -> `instagram`). Each section is a table with exactly three columns: **Idea | Resources | Virality**.
+A **master-detail** Report: a sticky **Index** (master) beside a column of **detail** briefs. The page has two synchronized halves, and **every Channel appears in both, in the same order** — the order the Channel list is given (the operator's `content_channels`, conventionally `substack` → `linkedin` → `instagram`):
 
-Set each section's **channel note** (the `{{CHANNEL_NOTE}}` caption in the section header) to `In topic order` for a scoreless channel and `Best bets first` for a scored channel — it tells the reader how that section is ordered.
+- **Index (master)** — one `.idx-group` per Channel; inside it, one `a.idx-row` per Topic that links (`href="#<anchor>"`) to that Topic's detail card.
+- **Detail** — one `.section-banner` + a stack of `.detail-card` briefs per Channel.
 
-One **row per Topic** (from `topics`). For each Topic, in each Channel's section:
+There is **one card per Topic** (from `topics`) in **each** Channel's detail section, and one matching index row.
 
-- **Idea** — the Topic's idea for *that channel*, read from the matching recommendation's `ideas[<channel>]` (join by `topic_id`). If the recommendation or the channel key is absent, leave the Idea cell empty rather than failing.
-- **Resources** — the Topic's **Sources**: resolve its `member_ids` against `corpus.json`, and render each resolved item as a **bare** link — `<a href="url">Outlet</a>`, where the text is its `account_or_outlet` (the **Outlet**) and the href is its `url`. Do **not** add inline styles; the template's `.resources a` rule styles each link (the ↗ marker, block layout) automatically. An id **absent from the corpus is skipped silently** — exactly as the Digest does. If none resolve, leave the cell empty.
-- **Virality** — depends on whether *that Channel has a rubric* (see below). Key the scored-vs-scoreless decision off **rubric presence**, not a hardcoded channel name:
-  - **Scoreless channel** (no rubric — e.g. `substack`): render `<span class="dash">&mdash;</span>`.
-  - **Scored channel** (has a rubric — e.g. `linkedin`, `instagram`): score the Idea per that channel's rubric and render the **Virality badge** (below).
+### Scored vs scoreless — keyed on rubric presence, never a channel name
+
+Whether a Channel is **scored** or **scoreless** is decided by whether *that Channel has a rubric* (below), never by a hardcoded channel name:
+
+- **Scored Channel** (has a rubric — e.g. `linkedin`, `instagram`): score each Idea per the rubric and render the **scored card** (composite scorebox + five sub-score meters + justification). The section is sorted by **composite descending** (best bet first). Its index rows show a colored band dot + the numeric composite. Idea noun is **"The post"**.
+- **Scoreless Channel** (no rubric — e.g. `substack`): render the **scoreless card** (an "Essay / unscored" scorebox + a topic summary; no meters, no justification). The section stays in **Topic order**. Its index rows show a hollow `.dot.none` + the word `essay`. Idea noun is **"The essay"**.
+
+### Fields you author or derive
+
+The template's fill instructions name every placeholder; these are the ones you derive from the inputs rather than copy verbatim:
+
+- **Headline** (`card-title`, and the same text in the index `row-headline`) — a short, punchy headline authored from the Idea's **hook**. It must be **distinct** from the Topic name (which already appears in the card eyebrow and the index `row-tag`) and from the long Idea body. One line.
+- **Card description** (`card-desc`) ← the Topic's `description`.
+- **Topic summary** (`topic-summary`, scoreless cards only) ← the Topic's `conversation_summary`.
+- **Rank** (`#N`, scored cards only) — the card's 1-based position in its scored section (so `#1` is the highest composite).
+- **Anchor** — a page-unique `id` per card, mirrored by its index row's `href`. Convention: `<channel-slug>-<topic-slug>` (e.g. `linkedin-anthropic-funding`). Scored sections are reordered by composite, so slugify from the Topic, not the rank.
+- **Idea** (`idea`) — the Topic's idea for *that channel*, read from the matching recommendation's `ideas[<channel>]` (join by `topic_id`). If the recommendation or the channel key is absent, leave the Idea empty rather than failing.
+- **Resources** (`res-list`) — the Topic's **Sources**: resolve its `member_ids` against `corpus.json`, and render each resolved item as a **bare** link — `<a href="url">Outlet</a>`, where the text is its `account_or_outlet` (the **Outlet**) and the href is its `url`. Add `class="creator"` when the resource is a **social handle** (e.g. an `@`-handle / Instagram account) — it gets a different marker and a mono font. Do **not** add inline styles. An id **absent from the corpus is skipped silently** — exactly as the Digest does. If none resolve, leave the list empty.
+- **Group meta / channel note / counts** — per the template: a scored group reads `N · scored` and its banner note `scored · best bets first`; a scoreless group reads `N · essays` and `long-form · unscored · in topic order`.
+- **Edition / legend summary / footer summary** — the run's date + time (derive from the run id/timestamp) for the masthead `edition`, and the run tally (`N ideas · N topics · N channels`) for the legend and footer.
 
 ## Virality scoring (scored channels)
 
@@ -58,14 +74,20 @@ You judge an `instagram` Idea as an **unpublished Reel concept** — score it fr
 
 Compute the composite as `0.30·ThreeSecondHook + 0.25·EmotionalValence + 0.25·Completability + 0.10·Universality + 0.10·AudioTrendLeverage`, rounded to the nearest integer (ties round half up). The canonical weights and the composite/banding math also live in `scripts/lib/virality_badge.py` (`INSTAGRAM_RUBRIC`).
 
-### The Virality badge
+### Rendering a scored Idea
 
-Render a scored Idea's Virality cell as the **reusable badge component** from the template (the same component every scored channel uses): the composite as a **color-coded badge** — **red** for composite ≤ 4, **amber** for 5–7, **green** for ≥ 8 — with the **five sub-scores** and the **2-sentence justification** rendered **beneath** it. Use the badge markup exactly as the template gives it, swapping the band class + background color, the composite, the five sub-score values, and the justification. Escape any interpolated text.
+Render the composite and sub-scores using the template's classes — **color is applied as a band class, never inline**. The bands are **red** for composite ≤ 4, **amber** for 5–7, **green** for ≥ 8. Two distinct uses of the band:
+
+- **Scorebox** (`.scorebox {band}`): the big composite. Its band is the **composite's** band, with the `.band` label in Title case (`Red` / `Amber` / `Green`).
+- **Sub-score meters** (`.sub` → `.meter {band}`): one per rubric dimension, in rubric order. Each meter's band is **that sub-score's own** band (a 7 reads `amber` even inside an otherwise-green card), and its bar **width is the sub-score × 10%** (a 9 → `width:90%`, a 10 → `width:100%`).
+- **Index row** (the master): the `.dot` and the `.row-score` both take the **composite's** band, and `row-score` shows the composite number. For a scoreless Topic, the dot is `.dot.none` and the score reads `essay`.
+
+The 2-sentence justification goes in the card's `<details class="just">` block. Escape any interpolated text.
 
 ## Section ordering
 
-- **Scoreless channel:** render Topics in **Topic order** (the order they appear in `trending_topics.json` `topics[]`).
-- **Scored channel:** render Topics sorted by **composite Virality descending** — the operator's best bet for that channel at the top. Break ties by Topic order.
+- **Scoreless channel:** render Topics in **Topic order** (the order they appear in `trending_topics.json` `topics[]`) — in both the index group and the detail section.
+- **Scored channel:** render Topics sorted by **composite Virality descending** — the operator's best bet for that channel at the top — in both halves. Break ties by Topic order.
 
 ## Output
 
